@@ -678,7 +678,7 @@ function resolveLightningHit(state: GameState): void {
     { cost },
   );
 
-  if (spiritBefore > victim.spirit) {
+  if (spiritBefore > victim.spirit || cultivationBefore > victim.cultivation) {
     for (const player of state.players) {
       if (player.id === victim.id) continue;
       if (
@@ -689,6 +689,8 @@ function resolveLightningHit(state: GameState): void {
         player.roundFlags.push('other-lightning-reward');
       }
     }
+  }
+  if (spiritBefore > victim.spirit) {
     if (
       victim.hand.includes('C03') &&
       !victim.roundFlags.includes('new-card:C03') &&
@@ -1214,8 +1216,12 @@ function legalAbilityActions(state: GameState, player: PlayerState): GameAction[
         );
       }
     }
-    if (player.characterId === 'R05' && !player.abilityUsed) {
-      for (const destination of ['repair', 'resist']) {
+    if (
+      player.characterId === 'R05' &&
+      !player.abilityUsed &&
+      (player.revealedPlan?.action === 'repair' || player.revealedPlan?.action === 'resist')
+    ) {
+      for (const destination of ['repair', 'resist'] as const) {
         if (player.revealedPlan?.action !== destination) {
           actions.push(
             makeAction(
@@ -1657,7 +1663,13 @@ function finishTargetedEffect(
     consumeCard(state, responder, 'C20');
     if (context.action.type === 'PLAY_CARD') {
       const sourceCardId = context.action.payload.cardId as OpportunityId;
-      consumeCard(state, source, sourceCardId);
+      if (sourceCardId === 'C21') {
+        // 假死丹 only cancels the effect aimed at its owner; 同心符's
+        // contribution belongs to the shared repair/resist action.
+        applyCard(state, source, context.action);
+      } else {
+        consumeCard(state, source, sourceCardId);
+      }
     } else {
       source.abilityUsed = true;
     }
@@ -1695,6 +1707,7 @@ function applyCard(state: GameState, player: PlayerState, action: GameAction): v
   if (definition.equipment) {
     if (player.equipment) state.opportunityDiscard.push(player.equipment);
     player.equipment = cardId;
+    player.spirit = Math.min(spiritCap(state, player), player.spirit);
   } else {
     switch (cardId) {
       case 'C01':

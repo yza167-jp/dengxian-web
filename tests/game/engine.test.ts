@@ -259,6 +259,114 @@ describe('deterministic engine', () => {
     );
   });
 
+  it('keeps 同心符 public contribution when 假死丹 cancels its personal targeting', () => {
+    let state = advanceUntil(
+      createGame(config(4, 8802)),
+      (candidate) =>
+        candidate.phase === 'window' && candidate.window?.timing === 'after_reveal',
+    );
+    const sourceId = state.window!.order[state.window!.cursor]!;
+    const source = state.players.find((player) => player.id === sourceId)!;
+    const target = state.players.find((player) => player.id !== sourceId)!;
+    source.revealedPlan = { action: 'repair', investment: 1, submittedAtRevision: state.revision };
+    target.revealedPlan = { action: 'repair', investment: 1, submittedAtRevision: state.revision };
+    state.opportunityDeck = state.opportunityDeck.filter(
+      (cardId) => cardId !== 'C20' && cardId !== 'C21',
+    );
+    source.hand.push('C21');
+    target.hand.push('C20');
+
+    const support = getLegalActions(state, source.id).find(
+      (action) =>
+        action.payload.cardId === 'C21' && action.payload.targetSeatId === target.id,
+    )!;
+    state = applyAction(state, support);
+    const counter = getLegalActions(state, target.id).find(
+      (action) => action.payload.cardId === 'C20',
+    )!;
+    state = applyAction(state, counter);
+
+    expect(state.roundModifiers.virtualRepair[source.id]).toBe(1);
+    expect(state.opportunityDiscard).toEqual(expect.arrayContaining(['C20', 'C21']));
+  });
+
+  it('limits 移星换斗 to switching between repair and resist', () => {
+    const state = advanceUntil(
+      createGame(config(4, 5505)),
+      (candidate) =>
+        candidate.phase === 'window' && candidate.window?.timing === 'after_reveal',
+    );
+    const seatId = state.window!.order[state.window!.cursor]!;
+    const player = state.players.find((candidate) => candidate.id === seatId)!;
+    player.characterId = 'R05';
+    player.revealedPlan = { action: 'cultivate', investment: 1, submittedAtRevision: state.revision };
+    expect(getLegalActions(state, seatId).filter(
+      (action) => action.payload.abilityId === 'R05-U',
+    )).toHaveLength(0);
+
+    player.revealedPlan = { action: 'repair', investment: 1, submittedAtRevision: state.revision };
+    const switches = getLegalActions(state, seatId).filter(
+      (action) => action.payload.abilityId === 'R05-U',
+    );
+    expect(switches.map((action) => action.payload.destination)).toEqual(['resist']);
+  });
+
+  it('discards excess spirit immediately when 山河图 is replaced', () => {
+    let state = advanceUntil(
+      createGame(config(4, 1515)),
+      (candidate) =>
+        candidate.phase === 'window' && candidate.window?.timing === 'opportunity',
+    );
+    const seatId = state.window!.order[state.window!.cursor]!;
+    const player = state.players.find((candidate) => candidate.id === seatId)!;
+    state.opportunityDeck = state.opportunityDeck.filter(
+      (cardId) => cardId !== 'E01' && cardId !== 'E15',
+    );
+    player.equipment = 'E15';
+    player.spirit = 8;
+    player.hand.push('E01');
+    const equip = getLegalActions(state, seatId).find(
+      (action) => action.payload.cardId === 'E01',
+    )!;
+
+    expect(() => {
+      state = applyAction(state, equip);
+    }).not.toThrow();
+    expect(state.players.find((candidate) => candidate.id === seatId)?.equipment).toBe('E01');
+    expect(state.players.find((candidate) => candidate.id === seatId)?.spirit).toBe(6);
+    expect(state.opportunityDiscard).toContain('E15');
+  });
+
+  it('rewards 邪修 when another player loses cultivation to lightning', () => {
+    let state = advanceUntil(
+      createGame(config(4, 7070)),
+      (candidate) => candidate.phase === 'lightning_reaction',
+    );
+    const victimId = state.lightning!.currentVictim!;
+    const victim = state.players.find((candidate) => candidate.id === victimId)!;
+    const cultivator = state.players.find((candidate) => candidate.id !== victimId)!;
+    victim.characterId = 'R01';
+    victim.spirit = 0;
+    victim.cultivation = 1;
+    cultivator.characterId = 'R07';
+    cultivator.spirit = 0;
+    cultivator.roundFlags = cultivator.roundFlags.filter(
+      (flag) => flag !== 'other-lightning-reward',
+    );
+    state.lightning!.cost = 1;
+
+    while (state.phase === 'lightning_reaction' && state.lightning?.currentVictim === victimId) {
+      const responderId = state.lightning.responderOrder[state.lightning.responderCursor]!;
+      const pass = getLegalActions(state, responderId).find(
+        (action) => action.type === 'PASS_REACTION',
+      )!;
+      state = applyAction(state, pass);
+    }
+
+    expect(state.players.find((candidate) => candidate.id === victimId)?.cultivation).toBe(0);
+    expect(state.players.find((candidate) => candidate.id === cultivator.id)?.spirit).toBe(1);
+  });
+
   it('implements 牵机索 recovery as a private reaction with cost and new-card lock', () => {
     const state = createGame(config(4, 9901));
     const responder = state.players[1]!;
