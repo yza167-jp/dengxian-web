@@ -1,10 +1,12 @@
 import { create } from 'zustand';
+import { z } from 'zod';
 import type { Socket } from 'socket.io-client';
-import { applyAction, createGame } from '../../shared/game/engine';
-import { chooseHeuristicAction } from '../../shared/game/bot';
+import { applyAction, assertValidGameState, createGame } from '../../shared/game/engine';
+import { chooseHeuristicAction, publicBotMessage } from '../../shared/game/bot';
 import { getViewForSeat } from '../../shared/game/view';
 import type {
   AiSeatConfig,
+  CharacterId,
   CreateGameConfig,
   GameState,
   GameView,
@@ -31,6 +33,9 @@ export interface SoloSetup {
   seed: number;
   difficulty: AiSeatConfig['difficulty'];
   persona: Persona;
+  characterId: CharacterId | 'random';
+  provider: AiSeatConfig['provider'];
+  model: string;
 }
 
 interface GameStore {
@@ -53,15 +58,16 @@ interface GameStore {
   muted: boolean;
   volume: number;
   reducedMotion: boolean;
+  chatMuted: boolean;
   setMode: (mode: ScreenMode) => void;
   updateSetup: (patch: Partial<SoloSetup>) => void;
-  startSolo: () => void;
+  startSolo: () => Promise<boolean>;
   continueRecentSolo: () => boolean;
   createOnline: () => Promise<void>;
   joinOnline: (code: string, name: string) => Promise<void>;
   reconnectOnline: () => Promise<boolean>;
   setReady: (ready: boolean) => Promise<void>;
-  startOnline: () => Promise<void>;
+  startOnline: () => Promise<boolean>;
   addBot: (ai: AiSeatConfig) => Promise<void>;
   removeBot: (seatId: SeatId) => Promise<void>;
   transferHost: (seatId: SeatId) => Promise<void>;
@@ -78,6 +84,7 @@ interface GameStore {
   selectCard: (cardId: string | null) => void;
   setActivePanel: (panel: 'log' | 'chat') => void;
   setAudio: (patch: { muted?: boolean; volume?: number; reducedMotion?: boolean }) => void;
+  setChatMuted: (muted: boolean) => void;
   clearError: () => void;
 }
 
@@ -91,6 +98,9 @@ const DEFAULT_SETUP: SoloSetup = {
   seed: 20260730,
   difficulty: 'normal',
   persona: 'steady',
+  characterId: 'random',
+  provider: 'local-bot',
+  model: '',
 };
 
 const RECENT_SOLO_KEY = 'dengxiantai.recentSolo';
@@ -109,6 +119,21 @@ interface LocalSaveEnvelope extends LocalSaveSummary {
   schemaVersion: 1;
   state: GameState;
   humanSeatId: SeatId;
+  chat?: ServerChatMessage[];
+}
+
+const serverChatMessageSchema = z.object({
+  id: z.string().min(1),
+  seatId: z.string().min(1),
+  name: z.string().min(1),
+  message: z.string(),
+  createdAt: z.string().min(1),
+  round: z.number().int().min(1).max(8).optional(),
+}).strict();
+
+function parseStoredChat(value: unknown): ServerChatMessage[] {
+  if (value === undefined) return [];
+  return z.array(serverChatMessageSchema).parse(value);
 }
 
 function getStorage(kind: 'local' | 'session'): Storage | null {
@@ -123,9 +148,11 @@ function botConfig(index: number, setup: SoloSetup): SeatConfig {
     name: ['玄霄', '扶摇', '照夜', '青璃', '问石'][index - 1] ?? `道友${index}`,
     kind: 'bot',
     ai: {
-      provider: 'local-bot',
+      provider: setup.provider,
+      model: setup.model.trim() || undefined,
       difficulty: setup.difficulty,
       persona: personas[(index + personas.indexOf(setup.persona)) % personas.length] ?? 'steady',
+      thinking: setup.difficulty === 'hard',
     },
   };
 }
@@ -136,23 +163,52 @@ function buildSoloConfig(setup: SoloSetup): CreateGameConfig {
     seed: setup.seed,
     faithfulRules: true,
     seats: [
-      { id: HUMAN_SEAT, name: setup.playerName.trim() || DEFAULT_SETUP.playerName, kind: 'human' },
+      {
+        id: HUMAN_SEAT,
+        name: setup.playerName.trim() || DEFAULT_SETUP.playerName,
+        kind: 'human',
+        characterId: setup.characterId === 'random' ? undefined : setup.characterId,
+      },
       ...Array.from({ length: setup.playerCount - 1 }, (_, index) => botConfig(index + 1, setup)),
     ],
   };
 }
 
-function saveRecentSolo(state: GameState, humanSeatId: SeatId): void {
-  getStorage('local')?.setItem(RECENT_SOLO_KEY, JSON.stringify({ schemaVersion: 1, state, humanSeatId }));
+function saveRecentSolo(state: GameState, humanSeatId: SeatId, chat: ServerChatMessage[]): void {
+  getStorage('local')?.setItem(RECENT_SOLO_KEY, JSON.stringify({
+    schemaVersion: 1,
+    state,
+    humanSeatId,
+    chat,
+  }));
 }
 
-function readRecentSolo(): { state: GameState; humanSeatId: SeatId } | null {
+function parseStoredState(state: unknown, humanSeatId: unknown): { state: GameState; humanSeatId: SeatId } {
+  assertValidGameState(state);
+  if (
+    typeof humanSeatId !== 'string' ||
+    !state.players.some((player) => player.id === humanSeatId && player.kind === 'human')
+  ) {
+    throw new Error('存档中的真人席位无效。');
+  }
+  return { state, humanSeatId };
+}
+
+function readRecentSolo(): { state: GameState; humanSeatId: SeatId; chat: ServerChatMessage[] } | null {
   const raw = getStorage('local')?.getItem(RECENT_SOLO_KEY);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as { schemaVersion?: number; state?: GameState; humanSeatId?: SeatId };
-    if (parsed.schemaVersion !== 1 || !parsed.state || !parsed.humanSeatId) return null;
-    return { state: parsed.state, humanSeatId: parsed.humanSeatId };
+    const parsed = JSON.parse(raw) as {
+      schemaVersion?: number;
+      state?: unknown;
+      humanSeatId?: unknown;
+      chat?: ServerChatMessage[];
+    };
+    if (parsed.schemaVersion !== 1) return null;
+    return {
+      ...parseStoredState(parsed.state, parsed.humanSeatId),
+      chat: parseStoredChat(parsed.chat),
+    };
   } catch {
     return null;
   }
@@ -162,8 +218,31 @@ function readLocalSaves(): LocalSaveEnvelope[] {
   const raw = getStorage('local')?.getItem(LOCAL_SAVES_KEY);
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw) as LocalSaveEnvelope[];
-    return Array.isArray(parsed) ? parsed.filter((save) => save.schemaVersion === 1 && Boolean(save.state)) : [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((candidate) => {
+      try {
+        if (!candidate || typeof candidate !== 'object') return [];
+        const save = candidate as Partial<LocalSaveEnvelope>;
+        if (
+          save.schemaVersion !== 1 ||
+          typeof save.id !== 'string' ||
+          typeof save.name !== 'string' ||
+          typeof save.updatedAt !== 'string' ||
+          typeof save.round !== 'number' ||
+          typeof save.phaseLabel !== 'string'
+        ) {
+          return [];
+        }
+        return [{
+          ...save,
+          ...parseStoredState(save.state, save.humanSeatId),
+          chat: parseStoredChat(save.chat),
+        } as LocalSaveEnvelope];
+      } catch {
+        return [];
+      }
+    });
   } catch {
     return [];
   }
@@ -178,7 +257,7 @@ function summarizeLocalSaves(): LocalSaveSummary[] {
 }
 
 function persistOnlineSession(session: ClientSession): void {
-  getStorage('session')?.setItem(ONLINE_SESSION_KEY, JSON.stringify({
+  getStorage('local')?.setItem(ONLINE_SESSION_KEY, JSON.stringify({
     roomId: session.roomId,
     code: session.code,
     seatId: session.seatId,
@@ -187,7 +266,8 @@ function persistOnlineSession(session: ClientSession): void {
 }
 
 function readOnlineSession(): ClientSession | null {
-  const raw = getStorage('session')?.getItem(ONLINE_SESSION_KEY);
+  const raw = getStorage('local')?.getItem(ONLINE_SESSION_KEY)
+    ?? getStorage('session')?.getItem(ONLINE_SESSION_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Pick<ClientSession, 'roomId' | 'code' | 'seatId' | 'seatToken'>;
@@ -216,22 +296,63 @@ function readOnlineSession(): ClientSession | null {
   }
 }
 
-function advanceBots(state: GameState, humanSeatId: SeatId): GameState {
+function advanceBots(
+  state: GameState,
+  humanSeatId: SeatId,
+  existingChat: ServerChatMessage[] = [],
+): { state: GameState; chat: ServerChatMessage[] } {
   let next = state;
+  const chat = [...existingChat];
   let guard = 0;
   while (!next.outcome && guard < 80) {
     const humanView = getViewForSeat(next, humanSeatId);
-    if (humanView.legalActions.length > 0) return next;
+    if (humanView.legalActions.length > 0) return { state: next, chat };
     const actor = next.players.find((player) => getViewForSeat(next, player.id).legalActions.length > 0);
-    if (!actor) return next;
+    if (!actor) return { state: next, chat };
     const actorView = getViewForSeat(next, actor.id);
     const decision = actor.kind === 'bot'
       ? chooseHeuristicAction(next, actorView, actor.id)
       : { action: actorView.legalActions[0]!, publicRationale: '自动处理等待动作。' };
     next = applyAction(next, decision.action);
+    if (actor.kind === 'bot') {
+      chat.push({
+        id: `local-chat-${next.gameId}-${next.revision}-${actor.id}`,
+        seatId: actor.id,
+        name: actor.name,
+        message: publicBotMessage(
+          decision.action,
+          'publicSpeech' in decision ? decision.publicSpeech : undefined,
+        ),
+        createdAt: new Date().toISOString(),
+        round: next.round,
+      });
+    }
     guard += 1;
   }
-  return next;
+  return { state: next, chat };
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  try {
+    const payload = JSON.parse(error.message) as { error?: string };
+    return payload.error ?? error.message;
+  } catch {
+    return error.message || fallback;
+  }
+}
+
+async function attempt<T>(
+  set: StoreSet,
+  fallback: string,
+  operation: () => Promise<T>,
+): Promise<T | null> {
+  try {
+    return await operation();
+  } catch (error) {
+    set({ error: errorMessage(error, fallback), status: fallback });
+    return null;
+  }
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -254,38 +375,93 @@ export const useGameStore = create<GameStore>((set, get) => ({
   muted: false,
   volume: 0.35,
   reducedMotion: false,
+  chatMuted: false,
 
   setMode: (mode) => set({ mode, error: null }),
   updateSetup: (patch) => set((state) => ({ setup: { ...state.setup, ...patch } })),
 
-  startSolo: () => {
-    const initial = createGame(buildSoloConfig(get().setup));
-    const advanced = advanceBots(initial, HUMAN_SEAT);
-    saveRecentSolo(advanced, HUMAN_SEAT);
-    set({
-      localState: advanced,
-      view: getViewForSeat(advanced, HUMAN_SEAT),
-      room: null,
-      session: null,
-      socket: null,
-      mode: 'table',
-      selectedCardId: null,
-      status: '离线本地规则引擎已启动，所有 Bot 使用启发式决策。',
-      error: null,
-    });
+  startSolo: async () => {
+    const setup = get().setup;
+    get().socket?.disconnect();
+    if (setup.provider === 'local-bot') {
+      try {
+        const initial = createGame(buildSoloConfig(setup));
+        const advanced = advanceBots(initial, HUMAN_SEAT);
+        saveRecentSolo(advanced.state, HUMAN_SEAT, advanced.chat);
+        set({
+          localState: advanced.state,
+          view: getViewForSeat(advanced.state, HUMAN_SEAT),
+          room: null,
+          session: null,
+          socket: null,
+          chat: advanced.chat,
+          mode: 'table',
+          selectedCardId: null,
+          status: '离线本地规则引擎已启动，Bot 会在谈判栏公开发言。',
+          error: null,
+        });
+        return true;
+      } catch (error) {
+        set({ error: errorMessage(error, '无法创建本地单人局。') });
+        return false;
+      }
+    }
+
+    set({ status: `正在创建 ${setup.provider} 私房单人局...`, error: null });
+    const session = await attempt(set, '无法创建 Provider 私房。', () => clientApi.createRoom({
+      hostName: setup.playerName.trim() || DEFAULT_SETUP.playerName,
+      maxSeats: setup.playerCount,
+      seed: setup.seed,
+      characterId: setup.characterId === 'random' ? undefined : setup.characterId,
+    }));
+    if (!session) return false;
+    attachOnlineSession(session, set);
+    set({ status: `已创建 ${setup.provider} 私房，正在配置 AI 席位。` });
+    const personas: Persona[] = ['steady', 'guardian', 'bold', 'suspicious', 'selfish'];
+    for (let index = 1; index < setup.playerCount; index += 1) {
+      const snapshot = await attempt(set, '无法添加 Provider Bot。', () => clientApi.addBot(session, {
+        name: ['玄霄', '扶摇', '照夜', '青璃', '问石'][index - 1] ?? `道友${index}`,
+        ai: {
+          provider: setup.provider,
+          model: setup.model.trim() || undefined,
+          difficulty: setup.difficulty,
+          persona: personas[(index + personas.indexOf(setup.persona)) % personas.length] ?? 'steady',
+          thinking: setup.difficulty === 'hard',
+        },
+      }));
+      if (!snapshot) return false;
+      session.snapshot = snapshot;
+      applySnapshot(snapshot, set);
+    }
+    const ready = await attempt(set, '无法准备 Provider 私房。', () => clientApi.ready(session, true));
+    if (!ready) return false;
+    session.snapshot = ready;
+    applySnapshot(ready, set);
+    const started = await attempt(set, '无法启动 Provider 私房。', () => clientApi.startRoom(session));
+    if (!started) return false;
+    session.snapshot = started;
+    applySnapshot(started, set);
+    set({ status: `${setup.provider} 私房已启动；服务异常时自动改由本地 Bot 接管。` });
+    return true;
   },
 
   continueRecentSolo: () => {
     const recent = readRecentSolo();
-    if (!recent) return false;
-    const advanced = advanceBots(recent.state, recent.humanSeatId);
+    if (!recent) {
+      set({ error: '没有可继续的最近单人局。' });
+      return false;
+    }
+    get().socket?.disconnect();
+    const advanced = advanceBots(recent.state, recent.humanSeatId, recent.chat);
     set({
-      localState: advanced,
-      view: getViewForSeat(advanced, recent.humanSeatId),
+      localState: advanced.state,
+      view: getViewForSeat(advanced.state, recent.humanSeatId),
       room: null,
       session: null,
+      socket: null,
+      chat: advanced.chat,
       humanSeatId: recent.humanSeatId,
-      mode: advanced.outcome ? 'outcome' : 'table',
+      mode: advanced.state.outcome ? 'outcome' : 'table',
       status: '已继续最近的本地单人局。',
       error: null,
     });
@@ -294,66 +470,102 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   createOnline: async () => {
     const setup = get().setup;
+    get().socket?.disconnect();
     set({ status: '正在创建在线房间...', error: null });
-    const session = await clientApi.createRoom({ hostName: setup.playerName, maxSeats: setup.playerCount, seed: setup.seed });
-    attachOnlineSession(session, set);
+    const session = await attempt(set, '创建在线房间失败。', () => clientApi.createRoom({
+      hostName: setup.playerName,
+      maxSeats: setup.playerCount,
+      seed: setup.seed,
+    }));
+    if (session) attachOnlineSession(session, set);
   },
 
   joinOnline: async (code, name) => {
+    get().socket?.disconnect();
     set({ status: '正在加入在线房间...', error: null });
-    const session = await clientApi.joinRoom({ code, name });
-    attachOnlineSession(session, set);
+    const session = await attempt(set, '加入在线房间失败。', () => clientApi.joinRoom({ code, name }));
+    if (session) attachOnlineSession(session, set);
   },
 
   reconnectOnline: () => {
     const saved = readOnlineSession();
-    if (!saved) return Promise.resolve(false);
+    if (!saved) {
+      set({ error: '没有保存的在线席位令牌。' });
+      return Promise.resolve(false);
+    }
     attachOnlineSession(saved, set);
     return Promise.resolve(true);
   },
 
   setReady: async (ready) => {
     const session = get().session;
-    if (!session) return;
-    applySnapshot(await clientApi.ready(session, ready), set);
+    if (!session) {
+      set({ error: '请先创建或加入在线房间。' });
+      return;
+    }
+    const snapshot = await attempt(set, '更新准备状态失败。', () => clientApi.ready(session, ready));
+    if (snapshot) applySnapshot(snapshot, set);
   },
 
   startOnline: async () => {
     const session = get().session;
-    if (!session) return;
-    applySnapshot(await clientApi.startRoom(session), set);
+    if (!session) {
+      set({ error: '请先创建或加入在线房间。' });
+      return false;
+    }
+    const snapshot = await attempt(set, '在线对局启动失败。', () => clientApi.startRoom(session));
+    if (!snapshot) return false;
+    applySnapshot(snapshot, set);
+    return true;
   },
 
   addBot: async (ai) => {
     const { session, socket } = get();
-    if (!session || !socket) return;
+    if (!session || !socket) {
+      set({ error: '在线连接尚未建立。' });
+      return;
+    }
     const count = get().room?.seats.length ?? 1;
-    const snapshot = await emitRoomSnapshot(socket, 'room:add-bot', session, {
+    const snapshot = await attempt(set, '添加 AI 失败。', () => emitRoomSnapshot(socket, 'room:add-bot', session, {
       name: `${ai.provider === 'local-bot' ? '本地' : ai.provider === 'deepseek' ? 'DeepSeek' : '兼容'} AI ${count}`,
       ai,
-    });
-    applySnapshot(snapshot, set);
+    }));
+    if (snapshot) applySnapshot(snapshot, set);
   },
 
   removeBot: async (seatId) => {
     const { session, socket } = get();
-    if (!session || !socket) return;
-    applySnapshot(await emitRoomSnapshot(socket, 'room:remove-bot', session, { targetSeatId: seatId }), set);
+    if (!session || !socket) {
+      set({ error: '在线连接尚未建立。' });
+      return;
+    }
+    const snapshot = await attempt(set, '移除 AI 失败。', () =>
+      emitRoomSnapshot(socket, 'room:remove-bot', session, { targetSeatId: seatId }));
+    if (snapshot) applySnapshot(snapshot, set);
   },
 
   transferHost: async (seatId) => {
     const { session, socket } = get();
-    if (!session || !socket) return;
-    applySnapshot(await emitRoomSnapshot(socket, 'room:host-transfer', session, { targetSeatId: seatId }), set);
+    if (!session || !socket) {
+      set({ error: '在线连接尚未建立。' });
+      return;
+    }
+    const snapshot = await attempt(set, '移交房主失败。', () =>
+      emitRoomSnapshot(socket, 'room:host-transfer', session, { targetSeatId: seatId }));
+    if (snapshot) applySnapshot(snapshot, set);
   },
 
   takeOverDisconnected: async (seatId) => {
     const { session, socket } = get();
-    if (!session || !socket) return;
-    applySnapshot(await emitRoomSnapshot(socket, 'room:takeover', session, {
+    if (!session || !socket) {
+      set({ error: '在线连接尚未建立。' });
+      return;
+    }
+    const snapshot = await attempt(set, '临时接管失败。', () => emitRoomSnapshot(socket, 'room:takeover', session, {
       targetSeatId: seatId,
       ai: { provider: 'local-bot', difficulty: 'normal', persona: 'steady' },
-    }), set);
+    }));
+    if (snapshot) applySnapshot(snapshot, set);
   },
 
   submitAction: async (actionId) => {
@@ -365,28 +577,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     if (session) {
       if (!view) return;
-      const result = await clientApi.submitAction(session, action.id, view.revision);
-      applySnapshot(result, set);
+      const result = await attempt(set, '动作提交失败，请重试。', () =>
+        clientApi.submitAction(session, action.id, view.revision));
+      if (result) applySnapshot(result, set);
       return;
     }
-    if (!localState) return;
-    const applied = applyAction(localState, action);
-    const advanced = advanceBots(applied, humanSeatId);
-    saveRecentSolo(advanced, humanSeatId);
-    set({
-      localState: advanced,
-      view: getViewForSeat(advanced, humanSeatId),
-      mode: advanced.outcome ? 'outcome' : 'table',
-      selectedCardId: null,
-      status: `已结算“${action.label}”。`,
-      error: null,
-    });
+    if (!localState) {
+      set({ error: '当前没有可操作的单人对局。' });
+      return;
+    }
+    try {
+      const applied = applyAction(localState, action);
+      const advanced = advanceBots(applied, humanSeatId, get().chat);
+      saveRecentSolo(advanced.state, humanSeatId, advanced.chat);
+      set({
+        localState: advanced.state,
+        view: getViewForSeat(advanced.state, humanSeatId),
+        chat: advanced.chat,
+        mode: advanced.state.outcome ? 'outcome' : 'table',
+        selectedCardId: null,
+        status: `已结算“${action.label}”。`,
+        error: null,
+      });
+    } catch (error) {
+      set({ error: errorMessage(error, '本地动作结算失败。') });
+    }
   },
 
   sendChat: (message) => {
     const { session, socket } = get();
     const trimmed = message.trim();
-    if (!session || !socket || !trimmed) return;
+    if (!trimmed) return;
+    if (!session || !socket) {
+      set({ error: '离线单人局只能查看 Bot 公开发言；真人聊天仅用于在线房间。' });
+      return;
+    }
     socket.emit('chat:send', {
       roomId: session.roomId,
       seatId: session.seatId,
@@ -424,8 +649,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   saveLocalNamed: (name) => {
-    const { localState, humanSeatId } = get();
-    if (!localState) return;
+    const { localState, humanSeatId, chat } = get();
+    if (!localState) {
+      set({ error: '当前没有可保存的本地单人局。' });
+      return;
+    }
     const now = new Date().toISOString();
     const id = `local-${localState.gameId}-${Date.now()}`;
     const save: LocalSaveEnvelope = {
@@ -437,6 +665,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       phaseLabel: localState.phaseLabel,
       state: localState,
       humanSeatId,
+      chat,
     };
     writeLocalSaves([save, ...readLocalSaves().filter((item) => item.name !== save.name)].slice(0, 30));
     set({ localSaves: summarizeLocalSaves(), status: `已保存“${save.name}”。` });
@@ -444,14 +673,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   loadLocalSave: (id) => {
     const save = readLocalSaves().find((candidate) => candidate.id === id);
-    if (!save) return false;
-    saveRecentSolo(save.state, save.humanSeatId);
+    if (!save) {
+      set({ error: '找不到这个本地存档，可能已被删除或版本不兼容。' });
+      return false;
+    }
+    get().socket?.disconnect();
+    saveRecentSolo(save.state, save.humanSeatId, save.chat ?? []);
     set({
       localState: save.state,
       view: getViewForSeat(save.state, save.humanSeatId),
       humanSeatId: save.humanSeatId,
       room: null,
       session: null,
+      socket: null,
+      chat: save.chat ?? [],
       mode: save.state.outcome ? 'outcome' : 'table',
       status: `已载入“${save.name}”。`,
       error: null,
@@ -466,18 +701,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   exportLocalSave: (id) => {
     const save = readLocalSaves().find((candidate) => candidate.id === id);
+    if (!save) set({ error: '找不到要导出的本地存档。' });
     return save ? JSON.stringify(save, null, 2) : null;
   },
 
   importLocalSave: (text, overwrite = false) => {
-    const parsed = JSON.parse(text) as LocalSaveEnvelope;
-    if (parsed.schemaVersion !== 1 || !parsed.state || !parsed.humanSeatId) throw new Error('存档格式无效。');
-    const saves = readLocalSaves();
-    const imported = overwrite || !saves.some((save) => save.id === parsed.id)
-      ? parsed
-      : { ...parsed, id: `local-import-${Date.now()}`, name: `${parsed.name}（导入）` };
-    writeLocalSaves([imported, ...saves.filter((save) => save.id !== imported.id)].slice(0, 30));
-    set({ localSaves: summarizeLocalSaves(), status: `已导入“${imported.name}”。` });
+    try {
+      const candidate = JSON.parse(text) as Partial<LocalSaveEnvelope>;
+      if (
+        candidate.schemaVersion !== 1 ||
+        typeof candidate.id !== 'string' ||
+        typeof candidate.name !== 'string' ||
+        typeof candidate.updatedAt !== 'string' ||
+        typeof candidate.round !== 'number' ||
+        typeof candidate.phaseLabel !== 'string'
+      ) {
+        throw new Error('存档格式无效。');
+      }
+      const valid = parseStoredState(candidate.state, candidate.humanSeatId);
+      const parsed: LocalSaveEnvelope = {
+        ...candidate,
+        ...valid,
+        schemaVersion: 1,
+        id: candidate.id,
+        name: candidate.name,
+        updatedAt: candidate.updatedAt,
+        round: candidate.round,
+        phaseLabel: candidate.phaseLabel,
+        chat: parseStoredChat(candidate.chat),
+      };
+      const saves = readLocalSaves();
+      const imported = overwrite || !saves.some((save) => save.id === parsed.id)
+        ? parsed
+        : { ...parsed, id: `local-import-${Date.now()}`, name: `${parsed.name}（导入）` };
+      writeLocalSaves([imported, ...saves.filter((save) => save.id !== imported.id)].slice(0, 30));
+      set({ localSaves: summarizeLocalSaves(), status: `已导入“${imported.name}”。`, error: null });
+    } catch (error) {
+      set({ error: `导入失败：${errorMessage(error, '存档格式无效。')}` });
+    }
   },
 
   selectCard: (cardId) => set({ selectedCardId: cardId }),
@@ -487,6 +748,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     volume: patch.volume ?? state.volume,
     reducedMotion: patch.reducedMotion ?? state.reducedMotion,
   })),
+  setChatMuted: (chatMuted) => set({ chatMuted }),
   clearError: () => set({ error: null }),
 }));
 
@@ -507,7 +769,9 @@ function attachOnlineSession(session: ClientSession, set: StoreSet): void {
     chat: session.snapshot.room.chat,
     humanSeatId: session.seatId,
     localState: null,
-    mode: 'online',
+    mode: session.snapshot.view
+      ? session.snapshot.view.outcome ? 'outcome' : 'table'
+      : 'online',
     status: `已进入房间 ${session.snapshot.room.code || session.code}。`,
     error: null,
   });

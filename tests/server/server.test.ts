@@ -74,6 +74,14 @@ describe('server http contracts', () => {
     expect(response.body.seatToken).toHaveLength(32);
     expect(JSON.stringify(response.body.room)).not.toContain('tokenHash');
     expect(response.body.room.status).toBe('lobby');
+    const withBot = await request(app.app).post('/api/rooms/add-bot').send({
+      roomId: response.body.room.id,
+      seatId: response.body.seatId,
+      seatToken: response.body.seatToken,
+      name: '私房 AI',
+      ai: { provider: 'deepseek', difficulty: 'normal', persona: 'steady' },
+    }).expect(200);
+    expect(withBot.body.room.seats).toHaveLength(2);
   });
 
   it('starts a game, returns seat-redacted views, and makes commands idempotent', async () => {
@@ -109,7 +117,12 @@ describe('server http contracts', () => {
   });
 
   it('reuses vacant seat ids without creating duplicate players', async () => {
-    const created = await request(app.app).post('/api/rooms').send({ hostName: '甲', maxSeats: 4, seed: 77 }).expect(201);
+    const created = await request(app.app).post('/api/rooms').send({
+      hostName: '甲',
+      maxSeats: 4,
+      seed: 77,
+      characterId: 'R07',
+    }).expect(201);
     const host = created.body as any;
     const addBot = (name: string) => app.services.rooms.addBot({
       roomId: host.room.id,
@@ -144,6 +157,7 @@ describe('server http contracts', () => {
       seatToken: host.seatToken,
     });
     expect(started.view?.players.map((player) => player.id).sort()).toEqual(['seat-1', 'seat-2', 'seat-3', 'seat-4']);
+    expect(started.view?.players.find((player) => player.id === host.seatId)?.characterId).toBe('R07');
   });
 
   it('never serializes canonical room state or another seat private cards in public snapshots', async () => {
@@ -161,7 +175,9 @@ describe('server http contracts', () => {
     expect(publicRoomJson).not.toContain('initialConfig');
     expect(publicRoomJson).not.toContain('actionIds');
     expect(publicRoomJson).not.toContain('tokenHash');
-    expect(publicRoomJson).not.toContain('ai');
+    for (const seat of snapshot.body.room.seats) {
+      expect(seat).not.toHaveProperty('ai');
+    }
     const stringValues = collectStringValues(snapshot.body);
     expect(stringValues).not.toContain(playerB.fateId);
     for (const cardId of playerB.hand) expect(stringValues).not.toContain(cardId);

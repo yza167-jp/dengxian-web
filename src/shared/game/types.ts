@@ -168,6 +168,7 @@ export interface GameEvent {
 
 export interface AscensionRanking {
   seatId: SeatId;
+  fateId: FateId;
   printedMerit: number;
   fateBonus: number;
   finalMerit: number;
@@ -185,6 +186,8 @@ export interface AscensionOutcome {
   ascenders: SeatId[];
   defeated: SeatId[];
   ranking: AscensionRanking[];
+  revealedFates: Record<SeatId, FateId>;
+  stats: GameStats;
 }
 
 export interface CollectiveFailureOutcome {
@@ -193,6 +196,8 @@ export interface CollectiveFailureOutcome {
   round: number;
   ascenders: [];
   defeated: SeatId[];
+  revealedFates: Record<SeatId, FateId>;
+  stats: GameStats;
 }
 
 export type GameOutcome = AscensionOutcome | CollectiveFailureOutcome;

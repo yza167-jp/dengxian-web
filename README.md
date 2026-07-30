@@ -1,6 +1,6 @@
 # 《末法登仙台》网页版
 
-这是上游纸面桌游 `XLT-6/mofa-dengxiantai@b7d214903fb10c7de20f399c3c5a7bf27d63cd0e` 的可游玩中文网页实现：一名玩家可与 3–5 个本地 Bot 离线对局，也可创建 4–6 人 Socket.IO 房间、邀请真人并由服务端权威结算。
+这是上游纸面桌游 `XLT-6/mofa-dengxiantai@b7d214903fb10c7de20f399c3c5a7bf27d63cd0e` 的可游玩中文网页实现：一名玩家可与 3–5 个本地 Bot 离线对局，也可选择 DeepSeek/兼容 Provider 自动创建服务端权威私房；多人模式使用 4–6 人 Socket.IO 房间。
 
 已实现：
 
@@ -9,7 +9,7 @@
 - 本地无 Key Bot，以及仅在服务端运行的 DeepSeek / OpenAI-compatible 适配器；外部调用失败自动回退合法启发式动作。
 - 按座位脱敏的联机快照、哈希座位令牌、断线重连、公开聊天与快速承诺。
 - SQLite 房间恢复和房主作用域的在线检查点；浏览器本地自动/命名存档支持载入、覆盖、导入、导出、删除。
-- 中文桌面优先 UI、教程、设置、结局、响应式布局、Docker 与 Playwright 发布测试。
+- 中文桌面优先 UI、首次指引、完整人物/卡牌词条、设置、天命结算、响应式布局、Docker 与 Playwright 发布测试。
 
 规则裁定见 [docs/RULES.md](docs/RULES.md) 与 [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md)，架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，验证证据见 [docs/TEST_REPORT.md](docs/TEST_REPORT.md)。
 
@@ -37,7 +37,7 @@ npx playwright install chromium
 启动后打开 `http://localhost:5173`：
 
 1. 点“开始单人局”。
-2. 选择 4–6 人、Bot 难度与自己的对桌气质；页面下方可先浏览七张上游人物卡。
+2. 选择 4–6 人、自己的角色、AI Provider/模型、Bot 难度与对桌气质；页面下方可浏览七张上游人物卡。
 3. 点“入坛开局”。前两个响应窗口没有要出的牌时点“跳过”，到“公开谈判”后点“锁定谈判准备”。
 4. 在同屏四栏中秘密选择“修炼 / 修台 / 抗劫 / 探索”；需要投入的行动可选 1–2 灵力。其他 Bot 会自动选择并同时揭晓。
 5. 目标是在天劫与裂痕压垮仙台前共同修满主台与席位，同时把自己的修为、功德与天命条件经营到足以争夺有限飞升席位。
@@ -91,7 +91,7 @@ docker compose up --build
 npm run verify
 ```
 
-该命令依次执行上游同步、依赖审计、类型检查、lint、36 项 Vitest、120 局 4/5/6 人模拟、生产构建和 15 项 Playwright E2E。Playwright 默认在独立的 `8797` 端口启动生产服务，避免与 `npm run dev` 使用的 `8787` API 服务冲突；可通过 `E2E_PORT` 覆盖。也可单独运行：
+该命令依次执行上游同步、依赖审计、类型检查、lint、53 项 Vitest、120 局 4/5/6 人模拟、生产构建和 16 项 Playwright E2E。Playwright 默认在独立的 `8797` 端口启动生产服务，避免与 `npm run dev` 使用的 `8787` API 服务冲突；可通过 `E2E_PORT` 覆盖。也可单独运行：
 
 ```bash
 npm run typecheck
@@ -99,7 +99,7 @@ npm run lint
 npm test
 npm run sim
 npm run build
-npm run e2e
+npm run test:e2e
 ```
 
 ## 截图

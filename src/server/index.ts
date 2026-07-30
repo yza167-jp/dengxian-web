@@ -255,6 +255,16 @@ export function createApp(options: { storage?: ServerStorage } = {}) {
     }
   });
 
+  app.post('/api/rooms/add-bot', (req, res, next) => {
+    try {
+      const result = rooms.addBot(addBotSchema.parse(req.body));
+      broadcastSnapshots(result.room.id);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/saves', (req, res, next) => {
     try {
       const auth = tokenSeatSchema.parse(req.query);

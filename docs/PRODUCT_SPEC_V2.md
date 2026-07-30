@@ -7,7 +7,7 @@
 规则版本：v0.1 忠实模式
 替代文件：根目录 `dengxiantai-web-build-spec.md`
 
-实现状态：本文件定义目标产品，不等同于当前完成度。当前仓库状态见 `docs/ARCHITECTURE.md` 与 `docs/TEST_REPORT.md`；截至 2026-07-30，服务端、SQLite 持久化、provider fallback、客户端骨架、构建、typecheck、单元测试和模拟已存在，但生产 `start`、e2e、lint、客户端/服务端联机路径对齐和真实外部 provider 调用仍未完成验证。
+实现状态：本文件定义目标产品，不等同于当前完成度。当前仓库状态见 `docs/ARCHITECTURE.md` 与 `docs/TEST_REPORT.md`；截至 2026-07-31，生产启动、E2E、lint、客户端/服务端联机路径、重启恢复、外部 Provider mock 降级和无 Key 私房单人流程均已有验证。真实带 Key Provider 调用与 Docker daemon 内镜像启动仍受外部环境限制。
 
 ## 产品目标
 

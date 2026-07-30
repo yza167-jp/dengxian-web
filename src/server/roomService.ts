@@ -2,7 +2,7 @@ import { applyAction, assertActionBelongsToLegalSet, createGame, getLegalActions
 import { chooseHeuristicAction, publicBotMessage } from '../shared/game/bot';
 import { hashGameState } from '../shared/game/replay';
 import { getViewForSeat } from '../shared/game/view';
-import type { AiSeatConfig, CreateGameConfig, GameState, GameView, PlayerKind, SeatId } from '../shared/game/types';
+import type { AiSeatConfig, CharacterId, CreateGameConfig, GameState, GameView, PlayerKind, SeatId } from '../shared/game/types';
 import { chooseAiMove } from './ai';
 import { newId, newToken, sha256 } from './storage';
 import type { ServerStorage } from './storage';
@@ -17,6 +17,7 @@ export interface RoomSeat {
   disconnectedAt?: string;
   tokenHash: string;
   ai?: AiSeatConfig;
+  characterId?: CharacterId;
 }
 
 export interface RoomPayload {
@@ -31,7 +32,7 @@ export interface RoomPayload {
   gameState: GameState | null;
   initialConfig: CreateGameConfig | null;
   actionIds: string[];
-  chat: Array<{ id: string; seatId: SeatId; name: string; message: string; createdAt: string }>;
+  chat: Array<{ id: string; seatId: SeatId; name: string; message: string; createdAt: string; round?: number }>;
 }
 
 export interface SeatAuth {
@@ -113,7 +114,7 @@ export class RoomService {
     this.markPersistedHumansDisconnected();
   }
 
-  createRoom(input: { hostName: string; maxSeats: number; seed: number }) {
+  createRoom(input: { hostName: string; maxSeats: number; seed: number; characterId?: CharacterId }) {
     const roomId = newId('room');
     const token = newToken();
     const hostSeatId = 'seat-1';
@@ -133,6 +134,7 @@ export class RoomService {
         connected: true,
         temporaryBot: false,
         tokenHash: sha256(token),
+        characterId: input.characterId,
       }],
       gameState: null,
       initialConfig: null,
@@ -306,6 +308,7 @@ export class RoomService {
         id: candidate.id,
         name: candidate.name,
         kind: candidate.kind,
+        characterId: candidate.characterId,
         ai: candidate.kind === 'bot' ? candidate.ai : undefined,
       })),
     };
@@ -358,6 +361,7 @@ export class RoomService {
       name: seat.name,
       message: input.message.replace(/\s+/g, ' '),
       createdAt: new Date(now).toISOString(),
+      round: room.gameState?.round ?? 0,
     };
     room.chat.push(entry);
     room.chat = room.chat.slice(-100);
@@ -506,8 +510,12 @@ export class RoomService {
         id: newId('chat'),
         seatId: bot.id,
         name: bot.name,
-        message: publicBotMessage(action, heuristic.publicSpeech),
+        message: [
+          publicBotMessage(action, heuristic.publicSpeech),
+          usedFallback ? '（外部 Provider 不可用，本步由本地 Bot 接管。）' : '',
+        ].filter(Boolean).join(' '),
         createdAt: new Date().toISOString(),
+        round: room.gameState.round,
       });
       room.chat = room.chat.slice(-100);
       if (room.gameState.outcome) room.status = 'finished';

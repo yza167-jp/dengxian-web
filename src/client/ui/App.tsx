@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link, NavLink, Route, Routes, useNavigate } from '../router';
-import { CALAMITY_BY_ID, CHARACTER_BY_ID, CHARACTERS, FATE_BY_ID, OPPORTUNITY_BY_ID, RULES_DIGEST } from '../../shared/data/content';
+import {
+  CALAMITIES,
+  CALAMITY_BY_ID,
+  CHARACTER_BY_ID,
+  CHARACTERS,
+  FATES,
+  FATE_BY_ID,
+  OPPORTUNITIES,
+  OPPORTUNITY_BY_ID,
+  RULES_DIGEST,
+} from '../../shared/data/content';
 import type { ActionChoice, CharacterId, GameAction, GameOutcome, GameView, PublicPlayerView } from '../../shared/game/types';
 import { ritualAudio } from '../audio/sound';
 import { useGameStore } from '../store/gameStore';
@@ -74,6 +84,16 @@ const ACTION_NAMES = {
   explore: '探索',
 } satisfies Record<ActionChoice, string>;
 const ACTION_ORDER: ActionChoice[] = ['cultivate', 'repair', 'resist', 'explore'];
+const RULE_FLOW = [
+  ['1. 揭示天劫', '翻开本轮天劫，按 4/5/6 人读取劫力与特殊文字。'],
+  ['2. 吐纳与谈判', '所有修士补充灵力；公开讨论承诺，但不得展示手牌、天命、密议或密票。'],
+  ['3. 秘密四选一', '每席秘密选择修炼、修台、抗劫或探索，并选择合法投入；全部提交后同时揭晓。'],
+  ['4. 机缘与神通窗口', '按劫首顺序处理合法机缘、人物能力、定向反应与替换效果；每轮机缘使用次数受限。'],
+  ['5. 公共结算', '修台填补主体与席位轨，抗劫抵消劫力；有效贡献者按投入获得功德。'],
+  ['6. 雷击与裂痕', '未抵消的劫力逐次造成雷击；无法承受时降低修为或形成裂痕，第三道裂痕全员失败。'],
+  ['7. 启动与飞升', '主体完成后秘密投票；启动时修为至少 6 才合格，按天命后功德、修为、灵力、劫首顺序排名。'],
+  ['8. 回合结束', '未启动则弃牌、轮转劫首并进入下一轮；第八轮结束仍未启动则全员失败。'],
+] as const;
 
 function characterCardPath(id: CharacterId): string {
   return CHARACTER_ART[id].card;
@@ -122,6 +142,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <NavLink to="/tutorial">规则</NavLink>
           <NavLink to="/saves">存档</NavLink>
           <NavLink to="/settings">设置</NavLink>
+          <NavLink to="/credits">制作</NavLink>
         </nav>
       </header>
       {error ? (
@@ -143,7 +164,10 @@ export function App() {
     if (
       !session &&
       (window.location.pathname === '/game' || window.location.pathname === '/online') &&
-      window.sessionStorage.getItem('dengxiantai.onlineSession')
+      (
+        window.localStorage.getItem('dengxiantai.onlineSession') ||
+        window.sessionStorage.getItem('dengxiantai.onlineSession')
+      )
     ) {
       void reconnectOnline();
     }
@@ -160,8 +184,23 @@ export function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/credits" element={<Credits />} />
         <Route path="/outcome" element={<Outcome />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Shell>
+  );
+}
+
+function NotFound() {
+  return (
+    <section className="empty-state">
+      <p className="eyebrow">404 · 迷失云海</p>
+      <h2>这条登仙路不存在</h2>
+      <p>地址可能已经失效；当前本地或在线对局不会因此被清除。</p>
+      <div className="hero-actions">
+        <Link className="primary-action" to="/">返回主菜单</Link>
+        <Link className="secondary-action" to="/game">回到当前对局</Link>
+      </div>
+    </section>
   );
 }
 
@@ -171,6 +210,9 @@ function MainMenu() {
   const reconnectOnline = useGameStore((state) => state.reconnectOnline);
   const localSaves = useGameStore((state) => state.localSaves);
   const loadLocalSave = useGameStore((state) => state.loadLocalSave);
+  const [showWelcome, setShowWelcome] = useState(
+    () => window.localStorage.getItem('dengxiantai.onboarding.v1') !== 'done',
+  );
   return (
     <section className="hero mofa-hero">
       <picture className="mofa-hero-art" aria-hidden="true">
@@ -185,6 +227,29 @@ function MainMenu() {
         <p className="eyebrow">末法玄坛 · 在线规则桌面</p>
         <h1>末法登仙台</h1>
         <p>合作修台，暗争飞升。四到六名修士在八轮天劫中秘密投入、谈判、抗劫并争夺有限席位。</p>
+        {showWelcome ? (
+          <aside className="first-run-guide" aria-label="首次进入指引">
+            <strong>第一次入坛？三句话就能开局</strong>
+            <ol>
+              <li>默认点“开始单人局”，无需 API Key。</li>
+              <li>每轮先谈判，再秘密选择修炼、修台、抗劫或探索。</li>
+              <li>保住仙台只是共同底线；最终飞升席位仍按个人排名争夺。</li>
+            </ol>
+            <div className="hero-actions">
+              <Link className="secondary-action" to="/tutorial">先读完整规则</Link>
+              <button
+                className="primary-action"
+                type="button"
+                onClick={() => {
+                  window.localStorage.setItem('dengxiantai.onboarding.v1', 'done');
+                  setShowWelcome(false);
+                }}
+              >
+                明白，开始选择
+              </button>
+            </div>
+          </aside>
+        ) : null}
         <div className="hero-actions">
           <Link className="primary-action" to="/solo">开始单人局</Link>
           <button
@@ -209,6 +274,7 @@ function MainMenu() {
           </button>
           <Link className="secondary-action" to="/online">加入在线房间</Link>
           <Link className="secondary-action" to="/tutorial">查看规则</Link>
+          <Link className="secondary-action" to="/credits">制作人员与许可</Link>
         </div>
         {localSaves.length > 0 ? (
           <div className="menu-saves" aria-label="最近命名存档">
@@ -260,6 +326,32 @@ function SoloSetup() {
           <input type="number" value={setup.seed} onChange={(event) => updateSetup({ seed: Number(event.target.value) })} />
         </label>
         <label>
+          你的角色
+          <select value={setup.characterId} onChange={(event) => updateSetup({ characterId: event.target.value as typeof setup.characterId })}>
+            <option value="random">随机分配</option>
+            {CHARACTERS.map((character) => (
+              <option key={character.id} value={character.id}>{character.name} · {character.ability.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          AI Provider
+          <select value={setup.provider} onChange={(event) => updateSetup({ provider: event.target.value as typeof setup.provider })}>
+            <option value="local-bot">本地启发式（离线）</option>
+            <option value="deepseek">DeepSeek（服务端私房）</option>
+            <option value="openai-compatible">OpenAI-compatible（服务端私房）</option>
+          </select>
+        </label>
+        <label>
+          AI 模型
+          <input
+            value={setup.model}
+            onChange={(event) => updateSetup({ model: event.target.value })}
+            placeholder="留空使用服务端默认"
+            disabled={setup.provider === 'local-bot'}
+          />
+        </label>
+        <label>
           Bot 难度
           <select value={setup.difficulty} onChange={(event) => updateSetup({ difficulty: event.target.value as typeof setup.difficulty })}>
             <option value="easy">入门</option>
@@ -280,7 +372,7 @@ function SoloSetup() {
       </div>
       <section className="rule-card mofa-character-gallery" aria-label="上游人物卡预览">
         <h3>七名修士人物卡</h3>
-        <p className="rules-digest">单人局仍按规则自动分配角色；这里展示上游介绍册中的人物美术与神通文本。</p>
+        <p className="rules-digest">可在上方指定自己的角色；选择“随机分配”时按固定 seed 洗牌。外部 Provider 通过服务端权威私房运行，失败会自动回退本地 Bot。</p>
         <div className="cards mofa-character-gallery-list">
           {CHARACTERS.map((character) => (
             <article
@@ -303,8 +395,10 @@ function SoloSetup() {
         type="button"
         onClick={() => {
           ritualAudio.pulse('reveal');
-          startSolo();
-          void navigate('/game');
+          void startSolo().then((started) => {
+            if (started) void navigate('/game');
+            else if (useGameStore.getState().session) void navigate('/online');
+          });
         }}
       >
         入坛开局
@@ -444,7 +538,17 @@ function OnlineLobby() {
                 添加 AI
               </button>
             ) : null}
-            {isHost ? <button className="primary-action" type="button" onClick={() => void startOnline().then(() => { void navigate('/game'); })}>开始对局</button> : null}
+            {isHost ? (
+              <button
+                className="primary-action"
+                type="button"
+                onClick={() => void startOnline().then((started) => {
+                  if (started) void navigate('/game');
+                })}
+              >
+                开始对局
+              </button>
+            ) : null}
           </div>
         </section>
       ) : <div className="info-strip">客户端会通过 REST 创建/加入房间，并使用 Socket.IO 重连、接收脱敏快照与公开聊天。</div>}
@@ -840,6 +944,9 @@ function EventLog({ view }: { view: GameView }) {
 
 function ChatPanel() {
   const chat = useGameStore((state) => state.chat);
+  const session = useGameStore((state) => state.session);
+  const chatMuted = useGameStore((state) => state.chatMuted);
+  const setChatMuted = useGameStore((state) => state.setChatMuted);
   const sendChat = useGameStore((state) => state.sendChat);
   const [text, setText] = useState('');
   const submit = (message: string) => {
@@ -848,28 +955,56 @@ function ChatPanel() {
   };
   return (
     <div className="chat-panel">
-      <div className="quick-promises">
-        {['本轮我抗劫', '优先补主台', '我需要探索', '准备启动'].map((promise) => <button key={promise} type="button" onClick={() => submit(promise)}>{promise}</button>)}
+      <div className="chat-toolbar">
+        <strong>{session ? '公开谈判' : 'Bot 公开发言'}</strong>
+        <label className="toggle-line">
+          <input type="checkbox" checked={chatMuted} onChange={(event) => setChatMuted(event.target.checked)} />
+          屏蔽聊天
+        </label>
       </div>
-      <ol className="event-log">
-        {chat.map((message) => <li key={message.id}><span>{message.name}</span><p>{message.message}</p></li>)}
-      </ol>
-      <form
-        className="chat-input"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit(text);
-        }}
-      >
-        <input aria-label="聊天输入" placeholder="输入公开谈判消息" maxLength={120} value={text} onChange={(event) => setText(event.target.value)} />
-        <button type="submit">发送</button>
-      </form>
+      {session ? (
+        <div className="quick-promises">
+          {['本轮我抗劫', '优先补主台', '我需要探索', '准备启动'].map((promise) => <button key={promise} type="button" onClick={() => submit(promise)}>{promise}</button>)}
+        </div>
+      ) : null}
+      {chatMuted ? (
+        <p className="info-strip">聊天已屏蔽；共 {chat.length} 条公开消息。</p>
+      ) : (
+        <ol className="event-log">
+          {chat.map((message) => (
+            <li key={message.id}>
+              <span>
+                {message.name}
+                {message.round ? ` · 第 ${message.round} 轮` : ''}
+                {' · '}
+                {new Date(message.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <p>{message.message}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+      {session ? (
+        <form
+          className="chat-input"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit(text);
+          }}
+        >
+          <input aria-label="聊天输入" placeholder="输入公开谈判消息" maxLength={120} value={text} onChange={(event) => setText(event.target.value)} />
+          <button type="submit">发送</button>
+        </form>
+      ) : (
+        <p className="info-strip">离线单人局不上传真人消息；本地 Bot 会在这里留下不含私密信息的模板化发言。</p>
+      )}
     </div>
   );
 }
 
 function Tutorial() {
   const [openRuleIndex, setOpenRuleIndex] = useState<number | null>(null);
+  const [glossaryQuery, setGlossaryQuery] = useState('');
   const closeRuleButtonRef = useRef<HTMLButtonElement>(null);
   const openRule = openRuleIndex === null ? null : RULE_IMAGES[openRuleIndex] ?? null;
   useEffect(() => {
@@ -911,6 +1046,33 @@ function Tutorial() {
           </article>
         ))}
       </div>
+      <section className="rule-card rules-reference" aria-labelledby="round-flow-title">
+        <h3 id="round-flow-title">完整回合流程</h3>
+        <ol className="rule-flow">
+          {RULE_FLOW.map(([title, description]) => (
+            <li key={title}>
+              <strong>{title}</strong>
+              <span>{description}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="info-strip">
+          对局中的动作区只显示当前修订版可执行的合法动作；按钮下方文字就是“当前为何可操作”的规则说明。
+        </p>
+      </section>
+      <section className="rule-card rules-reference" aria-labelledby="glossary-title">
+        <h3 id="glossary-title">完整人物与卡牌词条</h3>
+        <label>
+          搜索词条
+          <input
+            type="search"
+            value={glossaryQuery}
+            onChange={(event) => setGlossaryQuery(event.target.value)}
+            placeholder="输入 ID、名称、时机或效果"
+          />
+        </label>
+        <RuleGlossary query={glossaryQuery} />
+      </section>
       {openRule ? (
         <div
           className="mofa-rule-lightbox"
@@ -943,6 +1105,96 @@ function Tutorial() {
   );
 }
 
+function RuleGlossary({ query }: { query: string }) {
+  const normalized = query.trim().toLocaleLowerCase('zh-CN');
+  const matches = (parts: Array<string | number>) =>
+    !normalized || parts.join(' ').toLocaleLowerCase('zh-CN').includes(normalized);
+  const characters = CHARACTERS.filter((item) => matches([
+    item.id,
+    item.name,
+    item.passiveTrigger,
+    item.passiveEffect,
+    item.ability.name,
+    item.ability.effect,
+  ]));
+  const opportunities = OPPORTUNITIES.filter((item) => matches([
+    item.id,
+    item.name,
+    item.type,
+    item.trigger,
+    item.cost,
+    item.effect,
+    item.restriction,
+  ]));
+  const calamities = CALAMITIES.filter((item) => matches([
+    item.id,
+    item.name,
+    item.stage,
+    item.effect,
+    item.notes,
+  ]));
+  const fates = FATES.filter((item) => matches([
+    item.id,
+    item.name,
+    item.mainFate,
+    item.obsession,
+  ]));
+  const total = characters.length + opportunities.length + calamities.length + fates.length;
+  return (
+    <div className="glossary-groups">
+      <p className="rules-digest">找到 {total} 个词条；内容直接来自固定上游 v0.1 数据。</p>
+      <details open={Boolean(normalized)}>
+        <summary>人物与本命神通（{characters.length}）</summary>
+        <div className="glossary-list">
+          {characters.map((item) => (
+            <article key={item.id}>
+              <strong>{item.id} · {item.name} / {item.ability.name}</strong>
+              <span>{item.passiveTrigger}：{item.passiveEffect}</span>
+              <small>{item.ability.trigger}：{item.ability.effect}；{item.ability.restriction}</small>
+            </article>
+          ))}
+        </div>
+      </details>
+      <details open={Boolean(normalized)}>
+        <summary>机缘与法宝（{opportunities.length}）</summary>
+        <div className="glossary-list">
+          {opportunities.map((item) => (
+            <article key={item.id}>
+              <strong>{item.id} · {item.name} · {item.type}</strong>
+              <span>{item.trigger} / {item.cost}</span>
+              <small>{item.effect}；{item.restriction}</small>
+            </article>
+          ))}
+        </div>
+      </details>
+      <details open={Boolean(normalized)}>
+        <summary>天劫（{calamities.length}）</summary>
+        <div className="glossary-list">
+          {calamities.map((item) => (
+            <article key={item.id}>
+              <strong>{item.id} · {item.name} · {item.stage}</strong>
+              <span>劫力 4/5/6 人：{item.demand[4]}/{item.demand[5]}/{item.demand[6]}</span>
+              <small>{item.effect} {item.notes}</small>
+            </article>
+          ))}
+        </div>
+      </details>
+      <details open={Boolean(normalized)}>
+        <summary>秘密天命（{fates.length}）</summary>
+        <div className="glossary-list">
+          {fates.map((item) => (
+            <article key={item.id}>
+              <strong>{item.id} · {item.name}</strong>
+              <span>主命：{item.mainFate}（+{item.mainReward}）</span>
+              <small>执念：{item.obsession}（+{item.obsessionReward}）</small>
+            </article>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function Saves() {
   const serverSaves = useGameStore((state) => state.serverSaves);
   const localSaves = useGameStore((state) => state.localSaves);
@@ -952,6 +1204,7 @@ function Saves() {
   const deleteLocalSave = useGameStore((state) => state.deleteLocalSave);
   const exportLocalSave = useGameStore((state) => state.exportLocalSave);
   const importLocalSave = useGameStore((state) => state.importLocalSave);
+  const localState = useGameStore((state) => state.localState);
   const [name, setName] = useState('本地存档');
   const [payload, setPayload] = useState('');
   useEffect(() => {
@@ -962,7 +1215,14 @@ function Saves() {
       <div className="section-head"><p className="eyebrow">恢复 / 导出</p><h2>存档</h2></div>
       <div className="setup-grid">
         <label>存档名 <input value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <button className="primary-action wide" type="button" onClick={() => saveLocalNamed(name)}>保存当前单人局</button>
+        <button
+          className="primary-action wide"
+          type="button"
+          disabled={!localState}
+          onClick={() => saveLocalNamed(name)}
+        >
+          {localState ? '保存当前单人局' : '当前没有本地单人局'}
+        </button>
       </div>
       <div className="list-stack">
         {localSaves.length === 0 ? <p className="info-strip">当前没有本地命名存档；最近单人局会自动保存。</p> : null}
@@ -1019,7 +1279,20 @@ function Credits() {
   return (
     <section className="panel-page">
       <div className="section-head"><p className="eyebrow">制作信息</p><h2>Credits</h2></div>
-      <p>规则与素材来自上游《末法登仙台》公开资料；本客户端使用 React 19、Vite、Zustand 与 Socket.IO Client 构建。</p>
+      <div className="rule-card">
+        <h3>原作与美术</h3>
+        <p>
+          桌游规则、卡表与原始视觉素材来自 XLT-6 的
+          {' '}
+          <a href="https://github.com/XLT-6/mofa-dengxiantai" target="_blank" rel="noreferrer">《末法登仙台》上游仓库</a>
+          ，固定版本 <code>b7d214903fb10c7de20f399c3c5a7bf27d63cd0e</code>。
+        </p>
+        <p>上游内容按 MIT License 使用并保留版权声明；仓库内完整文本见 <code>vendor/mofa-dengxiantai/LICENSE</code> 与 <code>THIRD_PARTY_NOTICES.md</code>。</p>
+      </div>
+      <div className="rule-card">
+        <h3>网页版实现</h3>
+        <p>本客户端使用 React 19、TypeScript、Vite、Zustand、Express、Socket.IO 与 SQLite 构建。美术来源、裁切与 WebP 派生记录见 <code>docs/ASSET_MANIFEST.md</code>。</p>
+      </div>
     </section>
   );
 }
@@ -1036,32 +1309,68 @@ function Outcome() {
 }
 
 function OutcomeDetail({ outcome, players }: { outcome: GameOutcome; players: PublicPlayerView[] }) {
+  const stats = (
+    <dl className="outcome-stats">
+      <div><dt>终局轮次</dt><dd>第 {outcome.round} 轮</dd></div>
+      <div><dt>雷击次数</dt><dd>{outcome.stats.lightningHits}</dd></div>
+      <div><dt>阻止裂痕</dt><dd>{outcome.stats.cracksPrevented}</dd></div>
+      <div><dt>机缘使用</dt><dd>{outcome.stats.cardsPlayed}</dd></div>
+      <div><dt>修台 / 抗劫</dt><dd>{outcome.stats.actions.repair} / {outcome.stats.actions.resist}</dd></div>
+      <div><dt>强行破界</dt><dd>{outcome.stats.forcedBreach ? '发生' : '未发生'}</dd></div>
+    </dl>
+  );
   if (outcome.kind === 'collective_failure') {
-    return <p className="defeat">仙台崩裂，所有修士败退。原因：{outcome.reason}</p>;
+    return (
+      <>
+        <p className="defeat">
+          仙台崩裂，所有修士败退。原因：
+          {outcome.reason === 'third_crack' ? '第三道裂痕形成' : '第八轮结束仍未启动'}
+        </p>
+        {stats}
+        <ol className="ranking">
+          {players.map((player) => {
+            const fate = FATE_BY_ID.get(outcome.revealedFates[player.id]!);
+            return (
+              <li key={player.id}>
+                <strong>{player.name}</strong>
+                <span>天命揭示：{fate?.name ?? outcome.revealedFates[player.id]}</span>
+                <small>{fate?.mainFate}；执念：{fate?.obsession}</small>
+              </li>
+            );
+          })}
+        </ol>
+      </>
+    );
   }
   return (
-    <ol className="ranking">
-      {outcome.ranking.map((row) => {
-        const player = players.find((candidate) => candidate.id === row.seatId);
-        const character = player ? CHARACTER_BY_ID.get(player.characterId) : null;
-        return (
-          <li key={row.seatId} className="mofa-ranking-row">
-            {player ? (
-              <img
-                src={characterPortraitPath(player.characterId)}
-                alt={`${character?.name ?? player.characterId} 结算头像`}
-                loading="lazy"
-                className="mofa-ranking-portrait"
-              />
-            ) : null}
-            <strong>#{row.rank} {player?.name ?? row.seatId}</strong>
-            <span>{character?.name ?? player?.characterId ?? row.seatId}</span>
-            <span>最终功德 {row.finalMerit}</span>
-            <span>{row.ascended ? '飞升' : '落选'}</span>
-          </li>
-        );
-      })}
-    </ol>
+    <>
+      <p className="info-strip">开放 {outcome.openSeats} 个飞升席位 · {outcome.reason === 'vote' ? '密票启动' : '强行破界'}</p>
+      {stats}
+      <ol className="ranking">
+        {outcome.ranking.map((row) => {
+          const player = players.find((candidate) => candidate.id === row.seatId);
+          const character = player ? CHARACTER_BY_ID.get(player.characterId) : null;
+          const fate = FATE_BY_ID.get(row.fateId);
+          return (
+            <li key={row.seatId} className="mofa-ranking-row">
+              {player ? (
+                <img
+                  src={characterPortraitPath(player.characterId)}
+                  alt={`${character?.name ?? player.characterId} 结算头像`}
+                  loading="lazy"
+                  className="mofa-ranking-portrait"
+                />
+              ) : null}
+              <strong>#{row.rank} {player?.name ?? row.seatId}</strong>
+              <span>{character?.name ?? player?.characterId ?? row.seatId} · {fate?.name ?? row.fateId}</span>
+              <span>功德 {row.printedMerit} + 天命 {row.fateBonus} = {row.finalMerit}</span>
+              <span>修为 {row.cultivation} · 灵力 {row.spirit}</span>
+              <span>{row.ascended ? '飞升' : '落选'}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }
 

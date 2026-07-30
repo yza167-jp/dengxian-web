@@ -1,8 +1,10 @@
+import { z } from 'zod';
 import {
   CALAMITIES,
   CALAMITY_BY_ID,
   CHARACTERS,
   FATES,
+  FATE_BY_ID,
   OPPORTUNITIES,
   OPPORTUNITY_BY_ID,
   UPSTREAM_COMMIT,
@@ -849,6 +851,7 @@ function finishAscension(state: GameState, reason: 'vote' | 'force_breach'): voi
   const ascenders = qualified.slice(0, openSeats).map((player) => player.id);
   const ranking = qualified.map((player, index) => ({
     seatId: player.id,
+    fateId: player.fateId,
     printedMerit: printed.get(player.id) ?? 0,
     fateBonus: bonuses.get(player.id) ?? 0,
     finalMerit: player.merit,
@@ -867,6 +870,8 @@ function finishAscension(state: GameState, reason: 'vote' | 'force_breach'): voi
       .filter((player) => !ascenders.includes(player.id))
       .map((player) => player.id),
     ranking,
+    revealedFates: Object.fromEntries(state.players.map((player) => [player.id, player.fateId])),
+    stats: structuredClone(state.stats),
   };
   state.phase = 'finished';
   state.phaseLabel = '飞升结算';
@@ -883,6 +888,8 @@ function finishCollectiveFailure(
     round: state.round,
     ascenders: [],
     defeated: state.players.map((player) => player.id),
+    revealedFates: Object.fromEntries(state.players.map((player) => [player.id, player.fateId])),
+    stats: structuredClone(state.stats),
   };
   state.phase = 'finished';
   state.phaseLabel = reason === 'third_crack' ? '第三道裂痕 · 全员失败' : '末法降临 · 全员失败';
@@ -1972,6 +1979,275 @@ function validateState(state: GameState): void {
   }
 }
 
+const seatIdSchema = z.string().min(1);
+const characterIdSchema = z.enum(['R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R07']);
+const opportunityIdSchema = z.string().refine(
+  (value) => OPPORTUNITY_BY_ID.has(value as OpportunityId),
+  'Unknown opportunity id',
+);
+const calamityIdSchema = z.string().refine(
+  (value) => CALAMITY_BY_ID.has(value as CalamityId),
+  'Unknown calamity id',
+);
+const fateIdSchema = z.string().refine(
+  (value) => FATE_BY_ID.has(value as FateId),
+  'Unknown fate id',
+);
+const actionChoiceSchema = z.enum(['cultivate', 'repair', 'resist', 'explore']);
+const voteChoiceSchema = z.enum(['launch', 'continue']);
+const phaseSchema = z.enum([
+  'window',
+  'negotiation',
+  'planning',
+  'explore_choice',
+  'recover_discard',
+  'target_reaction',
+  'lightning_reaction',
+  'crack_reaction',
+  'voting',
+  'force_breach',
+  'discard',
+  'finished',
+]);
+const windowTimingSchema = z.enum([
+  'after_calamity',
+  'after_breath',
+  'after_reveal',
+  'opportunity',
+  'before_contribution',
+  'before_lightning',
+]);
+const aiSeatConfigSchema = z.object({
+  provider: z.enum(['local-bot', 'deepseek', 'openai-compatible']),
+  model: z.string().optional(),
+  difficulty: z.enum(['easy', 'normal', 'hard']),
+  persona: z.enum(['steady', 'bold', 'suspicious', 'selfish', 'guardian']),
+  thinking: z.boolean().optional(),
+}).strict();
+const secretPlanSchema = z.object({
+  action: actionChoiceSchema,
+  investment: z.number().int().min(0),
+  submittedAtRevision: z.number().int().min(0),
+}).strict();
+const playerStateSchema = z.object({
+  id: seatIdSchema,
+  seatIndex: z.number().int().min(0),
+  name: z.string().min(1),
+  kind: z.enum(['human', 'bot']),
+  characterId: characterIdSchema,
+  ai: aiSeatConfigSchema.optional(),
+  spirit: z.number().int().min(0),
+  cultivation: z.number().int().min(0).max(9),
+  merit: z.number().int().min(0),
+  fateId: fateIdSchema,
+  hand: z.array(opportunityIdSchema),
+  equipment: opportunityIdSchema.nullable(),
+  pendingPlan: secretPlanSchema.nullable(),
+  revealedPlan: secretPlanSchema.nullable(),
+  pendingVote: voteChoiceSchema.nullable(),
+  abilityUsed: z.boolean(),
+  opportunityUsedThisRound: z.boolean(),
+  abilityUsedThisRound: z.boolean(),
+  disconnected: z.boolean(),
+  temporaryBot: z.boolean(),
+  privateNotes: z.array(z.string()),
+  roundFlags: z.array(z.string()),
+}).strict();
+const platformStateSchema = z.object({
+  mainRequired: z.number().int().positive(),
+  mainProgress: z.number().int().min(0),
+  seatRequirements: z.array(z.number().int().positive()),
+  seatProgress: z.array(z.number().int().min(0)),
+  cracks: z.number().int().min(0).max(3),
+}).strict();
+const windowStateSchema = z.object({
+  timing: windowTimingSchema,
+  order: z.array(seatIdSchema),
+  cursor: z.number().int().min(0),
+}).strict();
+const gameActionSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum([
+    'PASS_WINDOW',
+    'READY_NEGOTIATION',
+    'SUBMIT_PLAN',
+    'PLAY_CARD',
+    'USE_ABILITY',
+    'CHOOSE_EXPLORE_CARD',
+    'PASS_REACTION',
+    'USE_REACTION',
+    'SUBMIT_VOTE',
+    'FORCE_BREACH',
+    'DECLINE_FORCE_BREACH',
+    'DISCARD_CARD',
+  ]),
+  seatId: seatIdSchema,
+  label: z.string(),
+  description: z.string(),
+  payload: z.record(z.string(), z.unknown()),
+}).strict();
+const exploreDecisionSchema = z.object({
+  seatId: seatIdSchema,
+  drawn: z.array(opportunityIdSchema),
+  sourceDiscard: opportunityIdSchema.optional(),
+}).strict();
+const recoverDiscardSchema = z.object({
+  explorerSeatId: seatIdSchema,
+  cardIds: z.array(opportunityIdSchema),
+  responderOrder: z.array(seatIdSchema),
+  responderCursor: z.number().int().min(0),
+}).strict();
+const targetedEffectSchema = z.object({
+  sourceSeatId: seatIdSchema,
+  targetSeatId: seatIdSchema,
+  action: gameActionSchema,
+  window: windowStateSchema,
+}).strict();
+const lightningSchema = z.object({
+  remaining: z.number().int().min(0),
+  order: z.array(seatIdSchema),
+  cursor: z.number().int().min(0),
+  currentVictim: seatIdSchema.nullable(),
+  responderOrder: z.array(seatIdSchema),
+  responderCursor: z.number().int().min(0),
+  redirected: z.boolean(),
+  cost: z.number().int().min(0),
+}).strict();
+const crackSchema = z.object({
+  responderOrder: z.array(seatIdSchema),
+  responderCursor: z.number().int().min(0),
+  source: z.enum(['lightning', 'calamity']),
+}).strict();
+const roundModifiersSchema = z.object({
+  calamityTextIgnored: z.boolean(),
+  disabledEquipmentSeats: z.array(seatIdSchema),
+  blockedWindowSeats: z.array(seatIdSchema),
+  priorityContributionSeats: z.array(seatIdSchema),
+  lightningOrderBonus: z.record(seatIdSchema, z.number()),
+  virtualRepair: z.record(seatIdSchema, z.number()),
+  virtualResist: z.record(seatIdSchema, z.number()),
+  cultivateBonus: z.record(seatIdSchema, z.number()),
+  exploreBonusDraw: z.record(seatIdSchema, z.number()),
+  redirectedLightning: z.boolean(),
+}).strict();
+const gameEventSchema = z.object({
+  sequence: z.number().int().positive(),
+  revision: z.number().int().min(0),
+  type: z.string().min(1),
+  publicText: z.string(),
+  actorSeatId: seatIdSchema.optional(),
+  visibleTo: z.array(seatIdSchema).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
+}).strict();
+const gameStatsSchema = z.object({
+  actions: z.object({
+    cultivate: z.number().int().min(0),
+    repair: z.number().int().min(0),
+    resist: z.number().int().min(0),
+    explore: z.number().int().min(0),
+  }).strict(),
+  lightningHits: z.number().int().min(0),
+  cracksPrevented: z.number().int().min(0),
+  cardsPlayed: z.number().int().min(0),
+  forcedBreach: z.boolean(),
+}).strict();
+const rankingSchema = z.object({
+  seatId: seatIdSchema,
+  fateId: fateIdSchema,
+  printedMerit: z.number().int().min(0),
+  fateBonus: z.number().int().min(0),
+  finalMerit: z.number().int().min(0),
+  cultivation: z.number().int().min(0).max(9),
+  spirit: z.number().int().min(0),
+  rank: z.number().int().positive(),
+  ascended: z.boolean(),
+}).strict();
+const revealedFatesSchema = z.record(seatIdSchema, fateIdSchema);
+const outcomeSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('ascension'),
+    reason: z.enum(['vote', 'force_breach']),
+    round: z.number().int().min(1).max(8),
+    openSeats: z.number().int().min(0),
+    ascenders: z.array(seatIdSchema),
+    defeated: z.array(seatIdSchema),
+    ranking: z.array(rankingSchema),
+    revealedFates: revealedFatesSchema,
+    stats: gameStatsSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal('collective_failure'),
+    reason: z.enum(['third_crack', 'eighth_round_without_launch']),
+    round: z.number().int().min(1).max(8),
+    ascenders: z.array(seatIdSchema).length(0),
+    defeated: z.array(seatIdSchema),
+    revealedFates: revealedFatesSchema,
+    stats: gameStatsSchema,
+  }).strict(),
+]);
+const persistedGameStateSchema = z.object({
+  schemaVersion: z.literal(2),
+  rulesVersion: z.literal('upstream-v0.1'),
+  upstreamCommit: z.literal(UPSTREAM_COMMIT),
+  gameId: z.string().min(1),
+  mode: z.enum(['solo', 'online']),
+  faithfulRules: z.boolean(),
+  seed: z.number().int().min(0),
+  rngState: z.number().int().min(0),
+  revision: z.number().int().min(0),
+  round: z.number().int().min(1).max(8),
+  phase: phaseSchema,
+  phaseLabel: z.string().min(1),
+  calamityLeaderIndex: z.number().int().min(0),
+  players: z.array(playerStateSchema).min(4).max(6),
+  platform: platformStateSchema,
+  calamityDeck: z.array(calamityIdSchema),
+  calamityDiscard: z.array(calamityIdSchema),
+  currentCalamity: calamityIdSchema,
+  currentDemand: z.number().int().min(0),
+  opportunityDeck: z.array(opportunityIdSchema),
+  opportunityDiscard: z.array(opportunityIdSchema),
+  window: windowStateSchema.nullable(),
+  readySeats: z.array(seatIdSchema),
+  exploreQueue: z.array(seatIdSchema),
+  exploreDecision: exploreDecisionSchema.nullable(),
+  recoverDiscard: recoverDiscardSchema.nullable(),
+  targetedEffect: targetedEffectSchema.nullable(),
+  resolutionStep: z.enum(['none', 'explore', 'cultivate', 'repair', 'resist']),
+  lightning: lightningSchema.nullable(),
+  crackContext: crackSchema.nullable(),
+  forceBreachOrder: z.array(seatIdSchema),
+  forceBreachCursor: z.number().int().min(0),
+  forcedBreachUsed: z.boolean(),
+  roundModifiers: roundModifiersSchema,
+  events: z.array(gameEventSchema),
+  stats: gameStatsSchema,
+  outcome: outcomeSchema.nullable(),
+  createdAt: z.string().min(1),
+  updatedAt: z.string().min(1),
+}).strict();
+
+export function assertValidGameState(value: unknown): asserts value is GameState {
+  const state = persistedGameStateSchema.parse(value) as unknown as GameState;
+  const seatIds = state.players.map((player) => player.id);
+  if (new Set(seatIds).size !== seatIds.length) throw new Error('Duplicate player seat id');
+  const characterIds = state.players.map((player) => player.characterId);
+  if (new Set(characterIds).size !== characterIds.length) throw new Error('Duplicate player character id');
+  if (state.players.some((player, index) => player.seatIndex !== index)) {
+    throw new Error('Player seat index invariant failed');
+  }
+  if (state.calamityLeaderIndex >= state.players.length) {
+    throw new Error('Calamity leader index invariant failed');
+  }
+  if (
+    state.platform.seatRequirements.length !== state.players.length - 1 ||
+    state.platform.seatProgress.length !== state.platform.seatRequirements.length
+  ) {
+    throw new Error('Platform seat track invariant failed');
+  }
+  validateState(state);
+}
+
 export function createGame(config: CreateGameConfig): GameState {
   assertContentCoverage();
   assertEffectCoverage();
@@ -1980,9 +2256,18 @@ export function createGame(config: CreateGameConfig): GameState {
   }
   if (!Number.isInteger(config.seed)) throw new Error('Seed must be an integer');
 
+  const explicitCharacters = config.seats.flatMap((seat) => (
+    seat.characterId ? [seat.characterId] : []
+  ));
+  if (new Set(explicitCharacters).size !== explicitCharacters.length) {
+    throw new Error('人物不可重复选择');
+  }
+
   let rngState = config.seed >>> 0;
   const characterShuffle = shuffleSeeded(
-    CHARACTERS.map((character) => character.id),
+    CHARACTERS
+      .map((character) => character.id)
+      .filter((characterId) => !explicitCharacters.includes(characterId)),
     rngState,
   );
   rngState = characterShuffle.state;
@@ -2016,30 +2301,35 @@ export function createGame(config: CreateGameConfig): GameState {
   );
   rngState = leaderShuffle.state;
 
-  const players: PlayerState[] = config.seats.map((seat, index) => ({
-    id: seat.id ?? `seat-${index + 1}`,
-    seatIndex: index,
-    name: seat.name,
-    kind: seat.kind,
-    characterId: seat.characterId ?? characterShuffle.value[index]!,
-    ai: seat.kind === 'bot' ? seat.ai ?? DEFAULT_AI : undefined,
-    spirit: 0,
-    cultivation: 0,
-    merit: 0,
-    fateId: fateShuffle.value[index] as FateId,
-    hand: [],
-    equipment: null,
-    pendingPlan: null,
-    revealedPlan: null,
-    pendingVote: null,
-    abilityUsed: false,
-    opportunityUsedThisRound: false,
-    abilityUsedThisRound: false,
-    disconnected: false,
-    temporaryBot: false,
-    privateNotes: [],
-    roundFlags: [],
-  }));
+  let shuffledCharacterIndex = 0;
+  const players: PlayerState[] = config.seats.map((seat, index) => {
+    const characterId = seat.characterId
+      ?? characterShuffle.value[shuffledCharacterIndex++]!;
+    return {
+      id: seat.id ?? `seat-${index + 1}`,
+      seatIndex: index,
+      name: seat.name,
+      kind: seat.kind,
+      characterId,
+      ai: seat.kind === 'bot' ? seat.ai ?? DEFAULT_AI : undefined,
+      spirit: 0,
+      cultivation: 0,
+      merit: 0,
+      fateId: fateShuffle.value[index] as FateId,
+      hand: [],
+      equipment: null,
+      pendingPlan: null,
+      revealedPlan: null,
+      pendingVote: null,
+      abilityUsed: false,
+      opportunityUsedThisRound: false,
+      abilityUsedThisRound: false,
+      disconnected: false,
+      temporaryBot: false,
+      privateNotes: [],
+      roundFlags: [],
+    };
+  });
   const playerCount = config.seats.length as 4 | 5 | 6;
   const state: GameState = {
     schemaVersion: 2,

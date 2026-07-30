@@ -117,6 +117,20 @@ test.describe('local play', () => {
     await advanceUntilRoundTwo(page);
   });
 
+  test('starts a server-authoritative Provider solo room and falls back without blocking', async ({ page }) => {
+    await page.goto('/solo');
+    await page.getByLabel('玩家名').fill('Provider 验局');
+    await page.getByLabel('Seed').fill('105');
+    await page.getByLabel('你的角色').selectOption('R07');
+    await page.getByLabel('AI Provider').selectOption('deepseek');
+    await page.getByRole('button', { name: '入坛开局' }).click();
+    await expect(page.getByLabel('游戏桌面')).toBeVisible();
+    await expect(page.getByText('邪修').first()).toBeVisible();
+    await clickPreferredAction(page);
+    await page.getByRole('button', { name: /^会话/ }).click();
+    await expect(page.getByLabel('公开会话抽屉')).toContainText(/本地 Bot 接管|公开局势/);
+  });
+
   test('continues the most recent solo game from the main menu', async ({ page }) => {
     await startSolo(page, '102');
     await page.goto('/');

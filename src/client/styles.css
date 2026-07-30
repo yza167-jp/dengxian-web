@@ -1587,6 +1587,119 @@ textarea {
   }
 }
 
+.first-run-guide,
+.rules-reference {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: rgba(9, 7, 10, 0.9);
+  box-shadow: var(--shadow-soft);
+}
+
+.first-run-guide {
+  display: grid;
+  gap: 0.7rem;
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+}
+
+.first-run-guide ol {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.4rem;
+  color: var(--paper-dim);
+}
+
+.rules-reference {
+  margin-top: 1.25rem;
+  padding: clamp(1rem, 2vw, 1.5rem);
+}
+
+.rule-flow,
+.glossary-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.rule-flow {
+  padding-left: 1.4rem;
+}
+
+.rule-flow li {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.rule-flow span,
+.glossary-list span,
+.glossary-list small {
+  color: var(--paper-dim);
+}
+
+.glossary-groups {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.glossary-groups details {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(18, 14, 18, 0.72);
+}
+
+.glossary-groups summary {
+  cursor: pointer;
+  padding: 0.8rem 1rem;
+  color: var(--gold-bright);
+}
+
+.glossary-list {
+  max-height: 30rem;
+  overflow: auto;
+  padding: 0 1rem 1rem;
+}
+
+.glossary-list article {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid rgba(215, 182, 102, 0.2);
+}
+
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.outcome-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.outcome-stats div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(18, 14, 18, 0.74);
+}
+
+.outcome-stats dt {
+  color: var(--paper-muted);
+}
+
+.outcome-stats dd {
+  margin: 0;
+  color: var(--gold-bright);
+  font-weight: 700;
+}
+
 [data-reduced-motion="true"] *,
 [data-reduced-motion="true"] *::before,
 [data-reduced-motion="true"] *::after {

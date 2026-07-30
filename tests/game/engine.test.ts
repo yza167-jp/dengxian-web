@@ -9,6 +9,7 @@ import {
 import { chooseHeuristicAction } from '../../src/shared/game/bot';
 import {
   applyAction,
+  assertValidGameState,
   createGame,
   getLegalActions,
 } from '../../src/shared/game/engine';
@@ -99,6 +100,41 @@ describe('deterministic engine', () => {
     );
   });
 
+  it('keeps an explicitly selected character unique at the table', () => {
+    const selected = config(4, 0);
+    selected.seats[0]!.characterId = 'R07';
+    const state = createGame(selected);
+
+    expect(state.players[0]!.characterId).toBe('R07');
+    expect(new Set(state.players.map((player) => player.characterId)).size).toBe(4);
+    expect(state.players.filter((player) => player.characterId === 'R07')).toHaveLength(1);
+  });
+
+  it('rejects duplicate explicitly selected characters', () => {
+    const duplicated = config(4, 0);
+    duplicated.seats[0]!.characterId = 'R07';
+    duplicated.seats[1]!.characterId = 'R07';
+
+    expect(() => createGame(duplicated)).toThrow(/人物不可重复/);
+  });
+
+  it('rejects incomplete or malformed persisted states', () => {
+    const missingCalamity = structuredClone(createGame(config()));
+    delete (missingCalamity as Partial<GameState>).currentCalamity;
+    expect(() => assertValidGameState(missingCalamity)).toThrow();
+
+    const malformedDeck = structuredClone(createGame(config()));
+    malformedDeck.opportunityDeck[0] = 'C999';
+    expect(() => assertValidGameState(malformedDeck)).toThrow(/Unknown opportunity id/);
+
+    const malformedOutcome = structuredClone(createGame(config()));
+    malformedOutcome.outcome = {
+      kind: 'collective_failure',
+      reason: 'third_crack',
+    } as GameState['outcome'];
+    expect(() => assertValidGameState(malformedOutcome)).toThrow();
+  });
+
   it('rejects stale or fabricated actions', () => {
     const state = createGame(config());
     const activeSeat = state.window!.order[state.window!.cursor]!;
@@ -171,6 +207,11 @@ describe('deterministic engine', () => {
           steps += 1;
         }
         expect(state.outcome, `players=${playerCount} seed=${seed}`).not.toBeNull();
+        expect(Object.keys(state.outcome!.revealedFates)).toHaveLength(playerCount);
+        expect(state.outcome!.stats).toEqual(state.stats);
+        if (state.outcome!.kind === 'ascension') {
+          expect(state.outcome!.ranking.every((row) => row.fateId.startsWith('F'))).toBe(true);
+        }
         expect(state.phase).toBe('finished');
         expect(state.round).toBeLessThanOrEqual(8);
       }

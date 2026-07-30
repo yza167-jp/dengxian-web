@@ -4,6 +4,7 @@ import type { GameAction, GameView } from '../shared/game/types';
 export const providerSchema = z.enum(['local-bot', 'deepseek', 'openai-compatible']);
 export const difficultySchema = z.enum(['easy', 'normal', 'hard']);
 export const personaSchema = z.enum(['steady', 'bold', 'suspicious', 'selfish', 'guardian']);
+export const characterSchema = z.enum(['R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R07']);
 
 export const aiSeatConfigSchema = z.object({
   provider: providerSchema.default('local-bot'),
@@ -17,6 +18,7 @@ export const createRoomSchema = z.object({
   hostName: z.string().trim().min(1).max(40).default('房主'),
   maxSeats: z.number().int().min(4).max(6).default(4),
   seed: z.number().int().min(0).max(0xffff_ffff).default(() => Math.floor(Math.random() * 0xffff_ffff)),
+  characterId: characterSchema.optional(),
 });
 
 export const joinRoomSchema = z.object({

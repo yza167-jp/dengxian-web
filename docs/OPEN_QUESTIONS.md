@@ -44,9 +44,9 @@
 
 ### Q7. 未覆盖冲突由谁裁定？
 
-裁定：忠实模式不提供可改变规则的房主作弊按钮。引擎无法编码的冲突进入 `manual_adjudication` 决定窗口，由当前劫首从合法的最小修复选项中选择；选择与原因写入日志。
+裁定：忠实模式不提供可改变规则的房主作弊按钮，也不宣称存在尚未实现的 `manual_adjudication` 阶段。当前已知冲突必须先在本文件形成固定裁定，再编码为确定性合法动作与测试；运行中的房主不能临时改写规则。
 
-理由：对应纸面规则中的“劫首临时裁定”，同时保持服务器权威和可回放。
+理由：服务端权威与可回放要求同一输入只能产生同一结果。若未来上游增加必须由劫首临时裁定的文本，应先引入明确、可测试的决定窗口再启用。
 
 ## 版本边界
 
@@ -58,24 +58,20 @@
 
 ### I1. 外部 AI provider 的结构化输出优先级
 
-待确认：DeepSeek 当前生产 API 对 tool call、JSON Output、beta 严格 schema 的实际支持矩阵需要在实现服务端 provider 时查阅官方文档并用真实响应验证。
+已确认的实现边界：严格工具调用使用 beta base；400/404/405/415/422 会改发普通 base 的 JSON-only 请求；401/402 不重试，429/5xx/超时/非法输出按上限重试后回退本地 Bot。mock 已覆盖模式切换、`Retry-After`、非法动作与无 Key 私房。
 
-当前临时边界：`src/server/ai.ts` 已实现 OpenAI-compatible 请求与无 key fallback，但本轮只验证了 fallback，未用真实 provider key 验证 DeepSeek 行为。
+仍待外部验证：当前环境没有真实 Provider Key，因此没有发出计费请求；部署时仍需做最小连通性 smoke。
 
 ### I2. SQLite schema 与存档兼容策略
 
-待确认：`schemaVersion: 2` 已在引擎类型中出现，`src/server/storage.ts` 已创建 SQLite tables，room save/import 已有服务器测试；仍需确认长期迁移策略、导入校验错误格式和服务重启恢复验收。
+已验证：SQLite 关闭并重新打开后可恢复进行中房间、修订和原座位 token；服务启动会把持久化真人连接状态归零，原 token 重连后恢复。浏览器导入同时检查 envelope、规则版本、固定上游 SHA、真人席位、唯一座位 ID 与资源不变量，并显示可恢复错误。
 
-当前临时边界：可以宣称存在服务器存档 API 和测试覆盖；不得宣称生产级迁移或重启恢复已完成。
+仍待长期决策：当前只有 migration id 1；未来 schemaVersion 变化需要增加显式迁移，不能复用类型断言。
 
 ### I3. 浏览器截图验收基线
 
-待确认：桌面分辨率和截图路径已在 README 中占位；当前构建通过，但尚未产出可信浏览器截图。
-
-当前临时边界：不要把 UI 截图验收标记为完成。
+已确认：Playwright 生成 1024×768、1280×720、1440×900、1920×1080 四档 release 截图；Safari 实机复核了六人环坛、秘密计划确认、响应窗口与抽屉关闭。代表性截图已保存在 `docs/screenshots/`。
 
 ### I4. 客户端与服务端联机 REST path 是否统一？
 
-待确认：当前 `src/client/api/clientApi.ts` 调用 `POST /api/games`、`POST /api/rooms/:roomId/join` 和 `POST /api/rooms/:roomId/commands`；当前 `src/server/index.ts` 暴露 `POST /api/rooms`、`POST /api/rooms/join` 和 `POST /api/rooms/command`。
-
-当前临时边界：服务器 room lifecycle 有单元测试，浏览器 online flow 不能宣称通过，直到 path contract 对齐并完成 e2e。
+已确认：客户端与服务端统一使用 `/api/rooms`、`/api/rooms/join`、`/api/rooms/command`、`/api/rooms/add-bot` 等路径。双浏览器 E2E 已覆盖创建、加入、补 Bot、准备、开局、推进一轮与刷新重连。

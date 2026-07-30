@@ -38,7 +38,7 @@ AI must only choose from already-instantiated legal actions:
 ```ts
 interface AiDecision {
   actionId: string;
-  publicRationale: string;
+  reasoning: string; // internal only; never forwarded to public chat
   provider: 'local-bot' | 'deepseek' | 'openai-compatible';
   usedFallback: boolean;
 }
@@ -51,8 +51,9 @@ Validation sequence for external providers:
 3. Require a structured response containing only one `actionId` plus short public rationale.
 4. Validate the response shape.
 5. Reject any `actionId` not present in the legal actions returned for the same revision.
-6. Retry within `AI_MAX_RETRIES` and `AI_MAX_TOTAL_WAIT_MS`.
-7. Fall back immediately after timeout, invalid JSON, invalid action, provider error, or circuit breaker open.
+6. If tool parameters receive 400/404/405/415/422, retry once as JSON-only without `tools` or `tool_choice`.
+7. Retry only 408/429/5xx, network/timeout, malformed JSON and illegal action within `AI_MAX_RETRIES` and `AI_MAX_TOTAL_WAIT_MS`; honor `Retry-After`.
+8. Fall back after the bounded attempts or when the circuit breaker is open.
 
 ## Prompt Boundaries
 
@@ -75,11 +76,11 @@ Logs must not persist full prompts, raw reasoning content, or other players' hid
 - `scripts/simulate.ts`;
 - `tests/game/engine.test.ts`.
 
-Room automation computes a legal heuristic decision first. External providers may replace its action only when the returned ID remains in the same revision's legal action set; all provider failures retain the heuristic action.
+Room automation computes a legal heuristic decision first. External providers may replace its action only when the returned ID remains in the same revision's legal action set; all provider failures retain the heuristic action. Provider-authored reasoning is never published. Public Bot chat is generated server-side from the executed action, with secret plans/votes/cards reduced to generic safe text and an explicit fallback marker when applicable.
 
 Verified behavior:
 
-- `npm test` passed 36 tests, including strict tool-call, JSON, timeout, 429, illegal-action, no-key fallback, and non-exposure of `reasoning_content`.
+- `npm test` passed 47 tests, including strict tool-call, tool-rejection → JSON-only transition, non-retryable 401, `Retry-After`, timeout, 429, illegal-action, no-key fallback, private-rationale isolation and non-exposure of `reasoning_content`.
 - `npm run sim` passed 120 all-bot games across 4, 5, and 6 players.
 
 ## Live-call boundary

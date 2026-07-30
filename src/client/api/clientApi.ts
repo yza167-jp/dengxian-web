@@ -53,6 +53,7 @@ export interface ServerChatMessage {
   name: string;
   message: string;
   createdAt: string;
+  round?: number;
 }
 
 export interface SaveSummary {
@@ -106,7 +107,7 @@ export const clientApi = {
     return response.providers;
   },
 
-  async createRoom(input: { hostName: string; maxSeats: number; seed: number }): Promise<ClientSession> {
+  async createRoom(input: { hostName: string; maxSeats: number; seed: number; characterId?: string }): Promise<ClientSession> {
     const response = await requestJson<{ room: PublicRoom; seatId: SeatId; seatToken: string }>('/api/rooms', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -128,6 +129,10 @@ export const clientApi = {
 
   startRoom(session: ClientSession): Promise<RoomSnapshot> {
     return authedPost('/api/rooms/start', session);
+  },
+
+  addBot(session: ClientSession, input: { name: string; ai: AiSeatConfig }): Promise<RoomSnapshot> {
+    return authedPost('/api/rooms/add-bot', session, input);
   },
 
   submitAction(session: ClientSession, actionId: string, baseRevision: number): Promise<RoomSnapshot> {

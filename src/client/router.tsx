@@ -106,7 +106,11 @@ export function Routes({ children }: { children: ReactNode }) {
     (child): child is ReactElement<RouteProps> =>
       isValidElement<RouteProps>(child) && child.props.path === pathname,
   );
-  return match?.props.element ?? null;
+  const fallback = routes.find(
+    (child): child is ReactElement<RouteProps> =>
+      isValidElement<RouteProps>(child) && child.props.path === '*',
+  );
+  return match?.props.element ?? fallback?.props.element ?? null;
 }
 
 export function useNavigate() {
