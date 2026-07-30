@@ -15,6 +15,10 @@ Vendored paths:
 - `vendor/mofa-dengxiantai/LICENSE`
 - `public/assets/upstream/raw/**`
 - `public/assets/upstream/web/**`
+- `public/assets/upstream/characters/**`
+- `public/assets/upstream/actions/**`
+- `public/assets/upstream/table/**`
+- `public/assets/upstream/social/**`
 
 License: MIT.
 
@@ -25,6 +29,8 @@ Copyright (c) 2026 XLT-6
 ```
 
 Upstream README states showcase images are AI-assisted prototype visuals for the current tabletop game's display and testing.
+
+Additional embedded-art disclosure: the character-card assets in `public/assets/upstream/characters/**` are optimized derivatives of raster images embedded in upstream `docs/末法登仙台_玩法介绍册_v0.3_新增背景与牌例.pdf` at the vendored commit. The action, table, and social candidate assets are measured crops or resized derivatives of the upstream showcase images listed above. See `docs/ASSET_MANIFEST.md` for dimensions, crop provenance, and runtime purpose.
 
 ## Direct npm Dependencies
 

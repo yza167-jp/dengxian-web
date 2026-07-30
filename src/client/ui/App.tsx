@@ -1,16 +1,106 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link, NavLink, Route, Routes, useNavigate } from '../router';
-import { CALAMITY_BY_ID, CHARACTER_BY_ID, FATE_BY_ID, OPPORTUNITY_BY_ID, RULES_DIGEST } from '../../shared/data/content';
-import type { GameAction, GameOutcome, GameView, PublicPlayerView } from '../../shared/game/types';
+import { CALAMITY_BY_ID, CHARACTER_BY_ID, CHARACTERS, FATE_BY_ID, OPPORTUNITY_BY_ID, RULES_DIGEST } from '../../shared/data/content';
+import type { ActionChoice, CharacterId, GameAction, GameOutcome, GameView, PublicPlayerView } from '../../shared/game/types';
 import { ritualAudio } from '../audio/sound';
 import { useGameStore } from '../store/gameStore';
 
-const HERO = '/assets/upstream/web/01-封面招募-941.webp';
+const HERO = {
+  small: '/assets/upstream/web/01-封面招募-720.webp',
+  large: '/assets/upstream/web/01-封面招募-941.webp',
+  alt: '末法登仙台封面招募图：修士列阵于玄坛前',
+};
 const RULE_IMAGES = [
-  '/assets/upstream/web/02-末法世界与共同目标-941.webp',
-  '/assets/upstream/web/03-共同修台争夺飞升-941.webp',
-  '/assets/upstream/web/04-每轮秘密四选一-941.webp',
+  {
+    small: '/assets/upstream/web/02-末法世界与共同目标-720.webp',
+    large: '/assets/upstream/web/02-末法世界与共同目标-941.webp',
+    title: '末法世界',
+    alt: '规则展示图 1：末法世界与共同目标，说明末法危机和玩家共同修筑登仙台',
+  },
+  {
+    small: '/assets/upstream/web/03-共同修台争夺飞升-720.webp',
+    large: '/assets/upstream/web/03-共同修台争夺飞升-941.webp',
+    title: '共同修台',
+    alt: '规则展示图 2：共同修台并争夺有限飞升席位',
+  },
+  {
+    small: '/assets/upstream/web/04-每轮秘密四选一-720.webp',
+    large: '/assets/upstream/web/04-每轮秘密四选一-941.webp',
+    title: '秘密四选一',
+    alt: '规则展示图 3：秘密四选一，每轮秘密选择修炼、修台、抗劫或探索',
+  },
 ];
+const CHARACTER_ART = {
+  R01: {
+    card: '/assets/upstream/characters/R01-card.webp',
+    portrait: '/assets/upstream/characters/R01-portrait.webp',
+  },
+  R02: {
+    card: '/assets/upstream/characters/R02-card.webp',
+    portrait: '/assets/upstream/characters/R02-portrait.webp',
+  },
+  R03: {
+    card: '/assets/upstream/characters/R03-card.webp',
+    portrait: '/assets/upstream/characters/R03-portrait.webp',
+  },
+  R04: {
+    card: '/assets/upstream/characters/R04-card.webp',
+    portrait: '/assets/upstream/characters/R04-portrait.webp',
+  },
+  R05: {
+    card: '/assets/upstream/characters/R05-card.webp',
+    portrait: '/assets/upstream/characters/R05-portrait.webp',
+  },
+  R06: {
+    card: '/assets/upstream/characters/R06-card.webp',
+    portrait: '/assets/upstream/characters/R06-portrait.webp',
+  },
+  R07: {
+    card: '/assets/upstream/characters/R07-card.webp',
+    portrait: '/assets/upstream/characters/R07-portrait.webp',
+  },
+} satisfies Record<CharacterId, { card: string; portrait: string }>;
+const ACTION_ART = {
+  cultivate: '/assets/upstream/actions/cultivate.webp',
+  repair: '/assets/upstream/actions/repair.webp',
+  resist: '/assets/upstream/actions/resist.webp',
+  explore: '/assets/upstream/actions/explore.webp',
+} satisfies Record<ActionChoice, string>;
+const ALTAR_ART = '/assets/upstream/table/altar.webp';
+const ACTION_NAMES = {
+  cultivate: '修炼',
+  repair: '修台',
+  resist: '抗劫',
+  explore: '探索',
+} satisfies Record<ActionChoice, string>;
+const ACTION_ORDER: ActionChoice[] = ['cultivate', 'repair', 'resist', 'explore'];
+
+function characterCardPath(id: CharacterId): string {
+  return CHARACTER_ART[id].card;
+}
+
+function characterPortraitPath(id: CharacterId): string {
+  return CHARACTER_ART[id].portrait;
+}
+
+function actionArtPath(choice: ActionChoice): string {
+  return ACTION_ART[choice];
+}
+
+function isActionChoice(value: unknown): value is ActionChoice {
+  return value === 'cultivate' || value === 'repair' || value === 'resist' || value === 'explore';
+}
+
+function actionChoiceFromAction(action: GameAction): ActionChoice | null {
+  const payloadAction = action.payload.action;
+  if (isActionChoice(payloadAction)) return payloadAction;
+  if (action.type === 'CHOOSE_EXPLORE_CARD') return 'explore';
+  return null;
+}
+
+function artVariable(name: string, path: string): CSSProperties {
+  return { [name]: `url("${path}")` } as CSSProperties;
+}
 
 function Shell({ children }: { children: React.ReactNode }) {
   const status = useGameStore((state) => state.status);
@@ -82,8 +172,16 @@ function MainMenu() {
   const localSaves = useGameStore((state) => state.localSaves);
   const loadLocalSave = useGameStore((state) => state.loadLocalSave);
   return (
-    <section className="hero" style={{ backgroundImage: `linear-gradient(90deg, rgba(12,10,16,.92), rgba(12,10,16,.45)), url("${HERO}")` }}>
-      <div className="hero-copy">
+    <section className="hero mofa-hero">
+      <picture className="mofa-hero-art" aria-hidden="true">
+        <source srcSet={HERO.small} media="(max-width: 720px)" />
+        <img
+          src={HERO.large}
+          alt=""
+          loading="eager"
+        />
+      </picture>
+      <div className="hero-copy mofa-hero-copy">
         <p className="eyebrow">末法玄坛 · 在线规则桌面</p>
         <h1>末法登仙台</h1>
         <p>合作修台，暗争飞升。四到六名修士在八轮天劫中秘密投入、谈判、抗劫并争夺有限席位。</p>
@@ -180,6 +278,26 @@ function SoloSetup() {
           </select>
         </label>
       </div>
+      <section className="rule-card mofa-character-gallery" aria-label="上游人物卡预览">
+        <h3>七名修士人物卡</h3>
+        <p className="rules-digest">单人局仍按规则自动分配角色；这里展示上游介绍册中的人物美术与神通文本。</p>
+        <div className="cards mofa-character-gallery-list">
+          {CHARACTERS.map((character) => (
+            <article
+              key={character.id}
+              className="hand-card zoomable mofa-character-preview"
+              tabIndex={0}
+              aria-label={`${character.name} 人物卡预览`}
+              data-character-id={character.id}
+              style={artVariable('--character-art', characterCardPath(character.id))}
+            >
+              <strong>{character.name}</strong>
+              <span>{character.ability.name}</span>
+              <small>{character.passiveEffect}</small>
+            </article>
+          ))}
+        </div>
+      </section>
       <button
         className="primary-action wide"
         type="button"
@@ -351,7 +469,11 @@ function GameTable() {
     );
   }
   return (
-    <section className="table-screen" aria-label="游戏桌面">
+    <section
+      className="table-screen mofa-table-screen"
+      aria-label="游戏桌面"
+      style={artVariable('--table-art', ALTAR_ART)}
+    >
       <Scoreboard view={view} />
       <CenterAltar view={view} />
       <PlayerHand view={view} />
@@ -379,11 +501,20 @@ function Scoreboard({ view }: { view: GameView }) {
 
 function PlayerToken({ player, active }: { player: PublicPlayerView; active: boolean }) {
   const character = CHARACTER_BY_ID.get(player.characterId);
+  const revealedChoice = player.revealedPlan?.action;
   return (
     <article className={`player-token ${active ? 'active' : ''}`}>
-      <div>
-        <strong>{player.name}</strong>
-        <small>{character?.name ?? player.characterId}</small>
+      <div className="mofa-player-identity">
+        <img
+          src={characterPortraitPath(player.characterId)}
+          alt={`${character?.name ?? player.characterId} 人物头像`}
+          loading="lazy"
+          className="mofa-player-portrait"
+        />
+        <div className="mofa-player-title">
+          <strong>{player.name}</strong>
+          <small>{character?.name ?? player.characterId}</small>
+        </div>
       </div>
       <dl>
         <dt>灵</dt><dd>{player.spirit}</dd>
@@ -391,7 +522,23 @@ function PlayerToken({ player, active }: { player: PublicPlayerView; active: boo
         <dt>德</dt><dd>{player.merit}</dd>
         <dt>手</dt><dd>{player.handCount}</dd>
       </dl>
-      <span className={player.planSubmitted ? 'lock locked' : 'lock'}>{player.revealedPlan ? '已揭' : player.planSubmitted ? '已锁' : '未锁'}</span>
+      {revealedChoice ? (
+        <span
+          className="lock locked"
+          data-plan-choice={revealedChoice}
+        >
+          <img
+            src={actionArtPath(revealedChoice)}
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            className="mofa-revealed-plan-icon"
+          />
+          已揭 · {ACTION_NAMES[revealedChoice]}
+        </span>
+      ) : (
+        <span className={player.planSubmitted ? 'lock locked' : 'lock'}>{player.planSubmitted ? '已锁' : '未锁'}</span>
+      )}
     </article>
   );
 }
@@ -401,12 +548,19 @@ function CenterAltar({ view }: { view: GameView }) {
   const seatDone = view.platform.seatProgress.filter((value, index) => value >= (view.platform.seatRequirements[index] ?? Infinity)).length;
   return (
     <section className="altar" aria-label="中央玄坛">
-      <div className="phase-orb">
+      <div
+        className="phase-orb mofa-phase-orb"
+        style={artVariable('--phase-art', ALTAR_ART)}
+      >
         <span>第 {view.round} 轮</span>
         <strong>{view.phaseLabel}</strong>
         <small>修订 {view.revision}</small>
       </div>
-      <article className="calamity-card zoomable" tabIndex={0}>
+      <article
+        className="calamity-card zoomable mofa-calamity-card"
+        tabIndex={0}
+        style={artVariable('--calamity-art', ALTAR_ART)}
+      >
         <p className="eyebrow">{calamity?.stage ?? '天劫'}</p>
         <h2>{calamity?.name ?? view.currentCalamity}</h2>
         <p>{calamity?.effect ?? '等待天劫揭示。'}</p>
@@ -433,10 +587,31 @@ function PlayerHand({ view }: { view: GameView }) {
   const selectedCardId = useGameStore((state) => state.selectedCardId);
   const selectCard = useGameStore((state) => state.selectCard);
   const fate = view.self ? FATE_BY_ID.get(view.self.fateId) : null;
+  const selfPlayer = view.players.find((player) => player.id === view.seatId) ?? null;
+  const selfCharacter = selfPlayer ? CHARACTER_BY_ID.get(selfPlayer.characterId) : null;
   return (
     <section className="hand-zone" aria-label="私有区域">
-      <article className="secret-card zoomable" tabIndex={0}>
+      <article
+        className="secret-card zoomable mofa-self-card"
+        tabIndex={0}
+        data-character-id={selfPlayer?.characterId}
+        style={selfPlayer ? artVariable('--character-art', characterCardPath(selfPlayer.characterId)) : undefined}
+      >
         <span className="lock locked">天命密封</span>
+        {selfPlayer ? (
+          <img
+            src={characterCardPath(selfPlayer.characterId)}
+            alt={`${selfCharacter?.name ?? selfPlayer.characterId} 人物立绘`}
+            loading="lazy"
+            className="mofa-self-portrait"
+          />
+        ) : null}
+        {selfCharacter ? (
+          <>
+            <h3>{selfCharacter.name}</h3>
+            <p>{selfCharacter.ability.name}：{selfCharacter.ability.effect}</p>
+          </>
+        ) : null}
         <h3>{fate?.name ?? '旁观席'}</h3>
         <p>{fate ? `${fate.mainFate}（${fate.mainReward}）` : '无私有天命'}</p>
         <p>{fate ? `${fate.obsession}（${fate.obsessionReward}）` : ''}</p>
@@ -469,26 +644,52 @@ function ActionDock({ actions }: { actions: GameAction[] }) {
     (acc[action.type] ??= []).push(action);
     return acc;
   }, {}), [actions]);
+  const isSecretPlan = actions.length > 0 && actions.every((action) => actionChoiceFromAction(action));
+  const actionGroups = useMemo(() => {
+    if (!isSecretPlan) return Object.entries(grouped);
+    return ACTION_ORDER.flatMap((choice) => {
+      const matching = actions.filter((action) => actionChoiceFromAction(action) === choice);
+      return matching.length > 0 ? [[choice, matching] as const] : [];
+    });
+  }, [actions, grouped, isSecretPlan]);
   return (
-    <section className="action-dock" aria-label="合法动作">
+    <section
+      className={`action-dock mofa-action-dock${isSecretPlan ? ' is-secret-plan' : ''}`}
+      aria-label="合法动作"
+      style={artVariable('--action-dock-art', '/assets/upstream/web/04-每轮秘密四选一-720.webp')}
+    >
       {actions.length === 0 ? <p>等待其他席位锁定或响应。</p> : null}
-      {Object.entries(grouped).map(([type, list]) => (
-        <div key={type} className="action-group">
-          <h3>{actionTypeName(type)}</h3>
-          {list.slice(0, 18).map((action) => (
-            <button
-              key={action.id}
-              type="button"
-              onClick={() => {
-                ritualAudio.pulse(action.type.includes('VOTE') || action.type.includes('PLAN') ? 'reveal' : 'action');
-                void submitAction(action.id);
-              }}
-              aria-label={`${action.label}：${action.description}`}
-            >
-              <strong>{action.label}</strong>
-              <small>{action.description}</small>
-            </button>
-          ))}
+      {actionGroups.map(([type, list]) => (
+        <div key={type} className="action-group" data-action-group={type}>
+          <h3>{isSecretPlan && isActionChoice(type) ? ACTION_NAMES[type] : actionTypeName(type)}</h3>
+          {list.slice(0, 18).map((action) => {
+            const choice = actionChoiceFromAction(action);
+            return (
+              <button
+                key={action.id}
+                className={choice ? 'mofa-action-button has-action-art' : 'mofa-action-button'}
+                data-action-choice={choice ?? undefined}
+                type="button"
+                onClick={() => {
+                  ritualAudio.pulse(action.type.includes('VOTE') || action.type.includes('PLAN') ? 'reveal' : 'action');
+                  void submitAction(action.id);
+                }}
+                aria-label={`${action.label}：${action.description}`}
+                style={choice ? artVariable('--action-art', actionArtPath(choice)) : undefined}
+              >
+                {choice ? (
+                  <img
+                    src={actionArtPath(choice)}
+                    alt={`${ACTION_NAMES[choice]}行动图`}
+                    loading="lazy"
+                    className="mofa-action-art"
+                  />
+                ) : null}
+                <strong>{action.label}</strong>
+                <small>{action.description}</small>
+              </button>
+            );
+          })}
         </div>
       ))}
     </section>
@@ -539,21 +740,76 @@ function ChatPanel() {
 }
 
 function Tutorial() {
+  const [openRuleIndex, setOpenRuleIndex] = useState<number | null>(null);
+  const closeRuleButtonRef = useRef<HTMLButtonElement>(null);
+  const openRule = openRuleIndex === null ? null : RULE_IMAGES[openRuleIndex] ?? null;
+  useEffect(() => {
+    if (!openRule) return undefined;
+    closeRuleButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenRuleIndex(null);
+      if (event.key === 'ArrowRight') setOpenRuleIndex((index) => (index === null ? 0 : Math.min(RULE_IMAGES.length - 1, index + 1)));
+      if (event.key === 'ArrowLeft') setOpenRuleIndex((index) => (index === null ? 0 : Math.max(0, index - 1)));
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [openRule]);
   return (
-    <section className="panel-page tutorial">
+    <section
+      className="panel-page tutorial mofa-tutorial"
+      style={artVariable('--tutorial-art', '/assets/upstream/web/02-末法世界与共同目标-941.webp')}
+    >
       <div className="section-head">
         <p className="eyebrow">规则教学</p>
         <h2>八轮天劫，有限席位</h2>
       </div>
       <p className="rules-digest">{RULES_DIGEST}</p>
       <div className="rule-grid">
-        {RULE_IMAGES.map((src, index) => (
-          <article key={src} className="rule-card">
-            <img src={src} alt={`规则展示图 ${index + 1}`} />
-            <h3>{['末法世界', '共同修台', '秘密四选一'][index]}</h3>
+        {RULE_IMAGES.map((image, index) => (
+          <article key={image.large} className="rule-card">
+            <button
+              className="mofa-rule-zoom"
+              type="button"
+              onClick={() => setOpenRuleIndex(index)}
+              aria-label={`放大${image.title}`}
+            >
+              <picture>
+                <source srcSet={image.small} media="(max-width: 720px)" />
+                <img src={image.large} alt={image.alt} loading="lazy" className="mofa-rule-image" />
+              </picture>
+            </button>
+            <h3>{image.title}</h3>
           </article>
         ))}
       </div>
+      {openRule ? (
+        <div
+          className="mofa-rule-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${openRule.title}完整规则图`}
+          onClick={() => setOpenRuleIndex(null)}
+        >
+          <div
+            className="rule-card mofa-rule-lightbox-card"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <picture>
+              <source srcSet={openRule.small} media="(max-width: 720px)" />
+              <img
+                src={openRule.large}
+                alt={openRule.alt}
+                className="mofa-rule-lightbox-image"
+              />
+            </picture>
+            <div className="hero-actions mofa-lightbox-actions">
+              <button className="secondary-action" type="button" onClick={() => setOpenRuleIndex((index) => Math.max(0, (index ?? 0) - 1))}>上一张</button>
+              <button className="secondary-action" type="button" onClick={() => setOpenRuleIndex((index) => Math.min(RULE_IMAGES.length - 1, (index ?? 0) + 1))}>下一张</button>
+              <button ref={closeRuleButtonRef} className="primary-action" type="button" onClick={() => setOpenRuleIndex(null)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -644,19 +900,38 @@ function Outcome() {
   return (
     <section className="panel-page outcome">
       <div className="section-head"><p className="eyebrow">终局</p><h2>飞升结算</h2></div>
-      {view?.outcome ? <OutcomeDetail outcome={view.outcome} /> : <p>尚未产生终局。</p>}
+      {view?.outcome ? <OutcomeDetail outcome={view.outcome} players={view.players} /> : <p>尚未产生终局。</p>}
       <Link className="primary-action" to="/solo">再开一局</Link>
     </section>
   );
 }
 
-function OutcomeDetail({ outcome }: { outcome: GameOutcome }) {
+function OutcomeDetail({ outcome, players }: { outcome: GameOutcome; players: PublicPlayerView[] }) {
   if (outcome.kind === 'collective_failure') {
     return <p className="defeat">仙台崩裂，所有修士败退。原因：{outcome.reason}</p>;
   }
   return (
     <ol className="ranking">
-      {outcome.ranking.map((row) => <li key={row.seatId}><strong>#{row.rank} {row.seatId}</strong><span>最终功德 {row.finalMerit}</span><span>{row.ascended ? '飞升' : '落选'}</span></li>)}
+      {outcome.ranking.map((row) => {
+        const player = players.find((candidate) => candidate.id === row.seatId);
+        const character = player ? CHARACTER_BY_ID.get(player.characterId) : null;
+        return (
+          <li key={row.seatId} className="mofa-ranking-row">
+            {player ? (
+              <img
+                src={characterPortraitPath(player.characterId)}
+                alt={`${character?.name ?? player.characterId} 结算头像`}
+                loading="lazy"
+                className="mofa-ranking-portrait"
+              />
+            ) : null}
+            <strong>#{row.rank} {player?.name ?? row.seatId}</strong>
+            <span>{character?.name ?? player?.characterId ?? row.seatId}</span>
+            <span>最终功德 {row.finalMerit}</span>
+            <span>{row.ascended ? '飞升' : '落选'}</span>
+          </li>
+        );
+      })}
     </ol>
   );
 }
