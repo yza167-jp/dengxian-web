@@ -1,0 +1,58 @@
+{
+  "name": "mofa-dengxiantai-web",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "sync:upstream": "node scripts/sync-upstream.mjs",
+    "predev": "npm run sync:upstream",
+    "dev": "concurrently -k -n WEB,SERVER -c magenta,cyan \"vite --host 0.0.0.0\" \"tsx watch src/server/index.ts\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "sim": "tsx scripts/simulate.ts --games 120",
+    "test:e2e": "playwright test",
+    "e2e": "npm run test:e2e",
+    "build": "npm run sync:upstream && vite build && tsup src/server/index.ts --format esm --platform node --target node24 --out-dir dist/server --clean false && tsup scripts/verify-replay.ts --format esm --platform node --target node24 --out-dir dist/scripts --clean false",
+    "start": "NODE_ENV=production node dist/server/index.js",
+    "verify": "npm run sync:upstream && npm audit && npm run typecheck && npm run lint && npm test && npm run sim && npm run build && npm run test:e2e"
+  },
+  "dependencies": {
+    "compression": "^1.8.1",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "zod": "^4.1.5",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.55.0",
+    "@types/compression": "^1.8.1",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@types/supertest": "^6.0.3",
+    "@vitejs/plugin-react": "^6.0.5",
+    "concurrently": "^9.2.1",
+    "eslint": "^10.8.0",
+    "jsdom": "^26.1.0",
+    "supertest": "^7.1.4",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.65.0",
+    "vite": "^8.2.0",
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  }
+}
