@@ -17,13 +17,13 @@ License: upstream MIT license in `vendor/mofa-dengxiantai/LICENSE`. Upstream REA
 
 | Path | Size | Dimensions | Purpose |
 |---|---:|---:|---|
-| `public/assets/upstream/web/01-封面招募-720.webp` | 228K | 720x1280 | Smaller cover/hero candidate |
+| `public/assets/upstream/web/01-封面招募-720.webp` | 228K | 720x1280 | Responsive mobile cover/hero source |
 | `public/assets/upstream/web/01-封面招募-941.webp` | 440K | 941x1672 | Current main menu hero |
-| `public/assets/upstream/web/02-末法世界与共同目标-720.webp` | 212K | 720x1280 | Smaller tutorial candidate |
+| `public/assets/upstream/web/02-末法世界与共同目标-720.webp` | 212K | 720x1280 | Responsive mobile tutorial source |
 | `public/assets/upstream/web/02-末法世界与共同目标-941.webp` | 400K | 941x1672 | Current tutorial image |
-| `public/assets/upstream/web/03-共同修台争夺飞升-720.webp` | 240K | 720x1280 | Smaller tutorial candidate |
+| `public/assets/upstream/web/03-共同修台争夺飞升-720.webp` | 240K | 720x1280 | Responsive mobile tutorial source |
 | `public/assets/upstream/web/03-共同修台争夺飞升-941.webp` | 456K | 941x1672 | Current tutorial image |
-| `public/assets/upstream/web/04-每轮秘密四选一-720.webp` | 232K | 720x1280 | Smaller tutorial candidate |
+| `public/assets/upstream/web/04-每轮秘密四选一-720.webp` | 232K | 720x1280 | Responsive mobile tutorial and action-dock source |
 | `public/assets/upstream/web/04-每轮秘密四选一-941.webp` | 432K | 941x1672 | Current tutorial image |
 
 ## Extracted Character Cards
@@ -76,7 +76,7 @@ Source: measured crops from `public/assets/upstream/raw/04-每轮秘密四选一
 
 | Path | Dimensions | Purpose | Provenance |
 |---|---:|---|---|
-| `public/og.png` | 1672x941 | Open Graph / Twitter social preview | Generated for this web release with OpenAI ImageGen from a bespoke dark-xianxia tabletop prompt; title and claims were visually checked |
+| `public/og.png` | 1672x941 | Preserved legacy social-preview fallback; current metadata uses the upstream-derived 1200x630 WebP | Generated for this web release with OpenAI ImageGen from a bespoke dark-xianxia tabletop prompt; title and claims were visually checked |
 
 ## Upstream Documents
 

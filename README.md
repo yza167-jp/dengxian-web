@@ -32,6 +32,20 @@ npm run dev
 npx playwright install chromium
 ```
 
+## 最快试玩
+
+启动后打开 `http://localhost:5173`：
+
+1. 点“开始单人局”。
+2. 选择 4–6 人、Bot 难度与自己的对桌气质；页面下方可先浏览七张上游人物卡。
+3. 点“入坛开局”。前两个响应窗口没有要出的牌时点“跳过”，到“公开谈判”后点“锁定谈判准备”。
+4. 在同屏四栏中秘密选择“修炼 / 修台 / 抗劫 / 探索”；需要投入的行动可选 1–2 灵力。其他 Bot 会自动选择并同时揭晓。
+5. 目标是在天劫与裂痕压垮仙台前共同修满主台与席位，同时把自己的修为、功德与天命条件经营到足以争夺有限飞升席位。
+
+试玩时建议先走一轮“修台”或“抗劫”熟悉公共贡献，再试“探索”看机缘牌。游戏会自动保存最近的单人局；主菜单可直接续玩，存档页可命名、导出和重新载入。
+
+联机试玩从“联机”创建房间，分享六位房间码；房主也可以补入 Bot。所有真人准备后由房主开局。
+
 ## 生产构建
 
 ```bash
@@ -77,7 +91,7 @@ docker compose up --build
 npm run verify
 ```
 
-该命令依次执行上游同步、依赖审计、类型检查、lint、36 项 Vitest、120 局 4/5/6 人模拟、生产构建和 8 项 Playwright E2E。也可单独运行：
+该命令依次执行上游同步、依赖审计、类型检查、lint、36 项 Vitest、120 局 4/5/6 人模拟、生产构建和 14 项 Playwright E2E。也可单独运行：
 
 ```bash
 npm run typecheck
@@ -94,6 +108,9 @@ npm run e2e
 - [1280×720 教程](docs/screenshots/tutorial-1280x720.png)
 - [1440×900 游戏桌](docs/screenshots/table-1440x900.png)
 - [1920×1080 存档](docs/screenshots/saves-1920x1080.png)
+- [上游美术与实现对照](docs/screenshots/art-v2-qa-comparison.png)
+- [1280×720 秘密四选一](docs/screenshots/art-v2-secret-plan.png)
+- [七人物卡画廊](docs/screenshots/art-v2-solo-full.png)
 
 ## 上游与许可
 
