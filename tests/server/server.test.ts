@@ -470,6 +470,58 @@ describe('server http contracts', () => {
     }
   });
 
+  it('repairs duplicate characters from pre-uniqueness persisted rooms on restart', async () => {
+    const storage = new ServerStorage(':memory:');
+    try {
+      const rooms = new RoomService(storage);
+      const created = rooms.createRoom({ hostName: '旧房主', maxSeats: 4, seed: 90211 });
+      for (let index = 0; index < 3; index += 1) {
+        rooms.addBot({
+          roomId: created.room.id,
+          seatId: created.seatId,
+          seatToken: created.seatToken,
+          name: `旧 Bot ${index + 1}`,
+          ai: { provider: 'local-bot', difficulty: 'normal', persona: 'steady' },
+        });
+      }
+      rooms.ready({
+        roomId: created.room.id,
+        seatId: created.seatId,
+        seatToken: created.seatToken,
+        ready: true,
+      });
+      await rooms.start({
+        roomId: created.room.id,
+        seatId: created.seatId,
+        seatToken: created.seatToken,
+      });
+
+      const legacy = rooms.getRoom(created.room.id);
+      const duplicateCharacter = legacy.gameState!.players[0]!.characterId;
+      legacy.gameState!.players[1]!.characterId = duplicateCharacter;
+      legacy.seats[1]!.characterId = duplicateCharacter;
+      legacy.initialConfig!.seats[1]!.characterId = duplicateCharacter;
+      storage.upsertRoom({
+        id: legacy.id,
+        code: legacy.code,
+        status: legacy.status,
+        hostSeatId: legacy.hostSeatId,
+        payload: legacy,
+      });
+
+      const restarted = new RoomService(storage);
+      const repaired = restarted.getRoom(created.room.id);
+      const repairedCharacters = repaired.gameState!.players.map((player) => player.characterId);
+      expect(new Set(repairedCharacters).size).toBe(repairedCharacters.length);
+      expect(repaired.seats[1]!.characterId).toBe(repaired.gameState!.players[1]!.characterId);
+      expect(repaired.initialConfig!.seats[1]!.characterId).toBe(
+        repaired.gameState!.players[1]!.characterId,
+      );
+    } finally {
+      storage.close();
+    }
+  });
+
   it('keeps private bot decisions out of public chat messages', () => {
     expect(publicBotMessage({
       id: 'secret-plan',

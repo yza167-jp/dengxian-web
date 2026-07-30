@@ -23,7 +23,7 @@ The production build emits `dist/server/index.js`; `npm start` serves the API, S
 | `src/shared/game/view.ts` | Seat-scoped redacted view | Implemented and unit-tested |
 | `src/shared/game/rng.ts` | Seeded RNG helpers | Implemented |
 | `src/shared/game/bot.ts` | Local heuristic bot | Implemented and used by simulator |
-| `src/shared/game/replay.ts` | State hash and action-ledger replay | Implemented and unit-tested |
+| `src/shared/game/replay.ts` | Strict Zod replay envelope validation, state hash and action-ledger rebuild | Implemented and unit-tested |
 | `src/client/main.tsx` | React entrypoint | Implemented |
 | `src/client/styles.css` | Client styling | Implemented |
 | `src/client/ui/App.tsx` | Browser routes and screens | Implemented and E2E-tested |

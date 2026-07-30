@@ -31,6 +31,7 @@ export type Phase =
   | 'recover_discard'
   | 'target_reaction'
   | 'lightning_reaction'
+  | 'post_lightning_recovery'
   | 'crack_reaction'
   | 'voting'
   | 'force_breach'
@@ -110,6 +111,7 @@ export interface RoundModifiers {
   virtualResist: Record<SeatId, number>;
   cultivateBonus: Record<SeatId, number>;
   exploreBonusDraw: Record<SeatId, number>;
+  effectiveContributors: SeatId[];
   redirectedLightning: boolean;
 }
 
@@ -140,6 +142,10 @@ export interface CrackContext {
   responderOrder: SeatId[];
   responderCursor: number;
   source: 'lightning' | 'calamity';
+}
+
+export interface PostLightningRecoveryContext {
+  seatId: SeatId;
 }
 
 export interface RecoverDiscardContext {
@@ -240,6 +246,7 @@ export interface GameState {
   targetedEffect: TargetedEffectContext | null;
   resolutionStep: 'none' | 'explore' | 'cultivate' | 'repair' | 'resist';
   lightning: LightningContext | null;
+  postLightningRecovery: PostLightningRecoveryContext | null;
   crackContext: CrackContext | null;
   forceBreachOrder: SeatId[];
   forceBreachCursor: number;

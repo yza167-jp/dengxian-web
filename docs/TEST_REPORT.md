@@ -9,7 +9,7 @@
 | `npm audit` | Last successful lock check: Pass | 0 vulnerabilities；本轮重试被 npm registry TLS 中断，依赖与 lockfile 未变化 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 5 files，58 tests |
+| `npm test` | Pass | 5 files，62 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
@@ -38,7 +38,7 @@ Playwright 覆盖：
 12. 教程与未结局状态下的结局路由。
 13. 1024×768、1280×720、1440×900、1920×1080 四档截图。
 
-截图位于 `docs/screenshots/`。常规 release 截图为 `menu-1024x768.png`、`tutorial-1280x720.png`、`table-1440x900.png`、`saves-1920x1080.png`；本轮额外保留 `art-v2-*.png` 作为美术优化目检证据。视觉复核确认页面非空、正文可读、主导航与核心动作可见，且人物头像、行动卡、规则图和中央仙台背景均已加载。
+截图位于 `docs/screenshots/`。常规 release 截图为 `menu-1024x768.png`、`tutorial-1280x720.png`、`table-1440x900.png`、`saves-1920x1080.png`；本轮额外保留 `art-v2-*.png` 作为美术优化目检证据。视觉复核确认页面非空、正文可读、主导航与核心动作可见，且人物头像、行动卡、规则图和中央仙台背景均已加载。Safari 实机还复核了环坛方案在普通响应窗口中的布局：单一响应居中，多目标动作区可纵向滚动，记录/会话抽屉关闭后不占用桌面。
 
 ## 隐私与服务端权威
 
@@ -49,8 +49,10 @@ Playwright 覆盖：
 - 命令按 `commandId` 幂等并校验 `baseRevision` 与合法动作 ID。
 - 命令缓存只在席位认证后读取，且绑定原始 seat/revision/action；伪造 token 或复用 ID 改载荷不能取得缓存私密快照。
 - 人类动作后的房间迁移与 `pending` 命令记录在同一 SQLite 事务提交；模拟在最终响应缓存前崩溃后，以同一 `commandId` 重试不会重复应用动作。
+- 回放 JSON 在重建前严格校验 schemaVersion、固定上游 SHA、初始席位配置、动作 ID 数组和最终 SHA-256；错误版本、畸形哈希与重复座位会被拒绝。
+- 回气散在雷击失去灵力后进入显式可选响应，不会自动消耗；借功诀只枚举本轮修台/抗劫结算中实际产生有效贡献的其他玩家。
 - 在线存档只允许房主按本房间列出、创建、覆盖和删除，API 只返回元数据；权威房间快照不会作为下载内容公开。
-- SQLite 文件关闭并重新打开后，进行中的房间、修订号和原座位令牌可恢复；服务重启先把真人标记离线，凭 token 重连后才恢复在线。
+- SQLite 文件关闭并重新打开后，进行中的房间、修订号和原座位令牌可恢复；服务重启先把真人标记离线，凭 token 重连后才恢复在线。旧状态缺少新增的雷击响应/有效贡献字段时会补入安全默认值，旧版本遗留的重复人物房间会确定性修复且同步房间与初始配置，而新建和导入仍严格拒绝重复人物。
 - 断线宽限后房主可让本地 Bot 临时接管；原会话令牌重连时恢复真人控制。
 - 房主可在开局前交换自己与目标席位的顺序；双方身份令牌与房主权限保持绑定，不随视觉位置互换。
 - 座位令牌只存哈希并受 `SESSION_TOKEN_TTL_DAYS` 控制；过期令牌无法认证，过期时间不进入公开房间快照。

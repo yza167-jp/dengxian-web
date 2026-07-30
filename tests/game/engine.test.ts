@@ -12,6 +12,7 @@ import {
   assertValidGameState,
   createGame,
   getLegalActions,
+  parseGameState,
 } from '../../src/shared/game/engine';
 import { assertEffectCoverage, CARD_EFFECTS } from '../../src/shared/game/effects';
 import { hashGameState, rebuildReplay } from '../../src/shared/game/replay';
@@ -135,6 +136,16 @@ describe('deterministic engine', () => {
     expect(() => assertValidGameState(malformedOutcome)).toThrow();
   });
 
+  it('normalizes states saved before optional lightning recovery was introduced', () => {
+    const legacy = structuredClone(createGame(config())) as unknown as Record<string, unknown>;
+    delete legacy.postLightningRecovery;
+    delete (legacy.roundModifiers as Record<string, unknown>).effectiveContributors;
+
+    const restored = parseGameState(legacy);
+    expect(restored.postLightningRecovery).toBeNull();
+    expect(restored.roundModifiers.effectiveContributors).toEqual([]);
+  });
+
   it('rejects stale or fabricated actions', () => {
     const state = createGame(config());
     const activeSeat = state.window!.order[state.window!.cursor]!;
@@ -235,6 +246,18 @@ describe('deterministic engine', () => {
       finalStateHash: hashGameState(state),
     };
     expect(hashGameState(rebuildReplay(replay))).toBe(replay.finalStateHash);
+    expect(() => rebuildReplay({ ...replay, upstreamCommit: 'wrong-upstream' })).toThrow();
+    expect(() => rebuildReplay({ ...replay, finalStateHash: 'not-a-sha256' })).toThrow();
+    expect(() => rebuildReplay({
+      ...replay,
+      initialConfig: {
+        ...replay.initialConfig,
+        seats: replay.initialConfig.seats.map((seat, index) => ({
+          ...seat,
+          id: index < 2 ? 'duplicate-seat' : `seat-${index + 1}`,
+        })),
+      },
+    })).toThrow(/座位 ID 不可重复/);
   });
 
   it('keeps a newly drawn opportunity unavailable until the following round', () => {
@@ -406,6 +429,93 @@ describe('deterministic engine', () => {
 
     expect(state.players.find((candidate) => candidate.id === victimId)?.cultivation).toBe(0);
     expect(state.players.find((candidate) => candidate.id === cultivator.id)?.spirit).toBe(1);
+  });
+
+  it('offers 回气散 after lightning loss without consuming it automatically', () => {
+    const initial = createGame(config(4, 7071));
+    const victim = initial.players[0]!;
+    victim.characterId = 'R01';
+    victim.hand = ['C03'];
+    victim.spirit = 3;
+    victim.opportunityUsedThisRound = false;
+    victim.roundFlags = [];
+    initial.phase = 'lightning_reaction';
+    initial.phaseLabel = `${victim.name} 将承受雷击`;
+    initial.lightning = {
+      remaining: 1,
+      order: [victim.id],
+      cursor: 0,
+      currentVictim: victim.id,
+      responderOrder: [victim.id],
+      responderCursor: 0,
+      redirected: false,
+      cost: 2,
+    };
+
+    const passLightning = getLegalActions(initial, victim.id).find(
+      (action) => action.type === 'PASS_REACTION',
+    )!;
+    const decision = applyAction(initial, passLightning);
+    expect(decision.phase).toBe('post_lightning_recovery');
+    expect(decision.players[0]?.spirit).toBe(1);
+    expect(decision.players[0]?.hand).toContain('C03');
+
+    const recoveryActions = getLegalActions(decision, victim.id);
+    const keep = recoveryActions.find((action) => action.type === 'PASS_REACTION')!;
+    const use = recoveryActions.find(
+      (action) => action.type === 'USE_REACTION' && action.payload.cardId === 'C03',
+    )!;
+
+    const kept = applyAction(decision, keep);
+    expect(kept.players[0]?.hand).toContain('C03');
+    expect(kept.players[0]?.spirit).toBe(1);
+
+    const recovered = applyAction(decision, use);
+    expect(recovered.players[0]?.hand).not.toContain('C03');
+    expect(recovered.opportunityDiscard).toContain('C03');
+    expect(recovered.players[0]?.spirit).toBe(3);
+  });
+
+  it('targets 借功诀 only at players with effective public contribution', () => {
+    const state = createGame(config(4, 7072));
+    const owner = state.players[0]!;
+    const effective = state.players[1]!;
+    const ineffective = state.players[2]!;
+    owner.hand = ['C28'];
+    owner.merit = 1;
+    owner.opportunityUsedThisRound = false;
+    owner.roundFlags = [];
+    effective.revealedPlan = {
+      action: 'repair',
+      investment: 1,
+      submittedAtRevision: state.revision,
+    };
+    ineffective.revealedPlan = {
+      action: 'resist',
+      investment: 2,
+      submittedAtRevision: state.revision,
+    };
+    state.roundModifiers.effectiveContributors = [effective.id];
+    state.phase = 'window';
+    state.phaseLabel = '雷击分配前';
+    state.window = {
+      timing: 'before_lightning',
+      order: [owner.id],
+      cursor: 0,
+    };
+
+    const cardActions = getLegalActions(state, owner.id).filter(
+      (action) => action.type === 'PLAY_CARD' && action.payload.cardId === 'C28',
+    );
+    expect(cardActions.map((action) => action.payload.targetSeatId)).toEqual([effective.id]);
+    expect(cardActions.some((action) => action.payload.targetSeatId === ineffective.id)).toBe(false);
+
+    state.roundModifiers.effectiveContributors = [];
+    expect(
+      getLegalActions(state, owner.id).some(
+        (action) => action.type === 'PLAY_CARD' && action.payload.cardId === 'C28',
+      ),
+    ).toBe(false);
   });
 
   it('implements 牵机索 recovery as a private reaction with cost and new-card lock', () => {

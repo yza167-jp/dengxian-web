@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { z } from 'zod';
 import type { Socket } from 'socket.io-client';
-import { applyAction, assertValidGameState, createGame } from '../../shared/game/engine';
+import { applyAction, createGame, parseGameState } from '../../shared/game/engine';
 import { chooseHeuristicAction, publicBotMessage } from '../../shared/game/bot';
 import { getViewForSeat } from '../../shared/game/view';
 import type {
@@ -185,14 +185,14 @@ function saveRecentSolo(state: GameState, humanSeatId: SeatId, chat: ServerChatM
 }
 
 function parseStoredState(state: unknown, humanSeatId: unknown): { state: GameState; humanSeatId: SeatId } {
-  assertValidGameState(state);
+  const parsedState = parseGameState(state);
   if (
     typeof humanSeatId !== 'string' ||
-    !state.players.some((player) => player.id === humanSeatId && player.kind === 'human')
+    !parsedState.players.some((player) => player.id === humanSeatId && player.kind === 'human')
   ) {
     throw new Error('存档中的真人席位无效。');
   }
-  return { state, humanSeatId };
+  return { state: parsedState, humanSeatId };
 }
 
 function readRecentSolo(): { state: GameState; humanSeatId: SeatId; chat: ServerChatMessage[] } | null {

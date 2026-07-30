@@ -64,9 +64,9 @@
 
 ### I2. SQLite schema 与存档兼容策略
 
-已验证：SQLite 关闭并重新打开后可恢复进行中房间、修订和原座位 token；服务启动会把持久化真人连接状态归零，原 token 重连后恢复。浏览器导入同时检查 envelope、规则版本、固定上游 SHA、真人席位、唯一座位 ID 与资源不变量，并显示可恢复错误。
+已验证：SQLite 关闭并重新打开后可恢复进行中房间、修订和原座位 token；服务启动会把持久化真人连接状态归零，原 token 重连后恢复。浏览器导入同时检查 envelope、规则版本、固定上游 SHA、真人席位、唯一座位 ID 与资源不变量，并显示可恢复错误。回放工具也用严格 Zod envelope 校验 schema、固定上游 SHA、初始配置、动作账本与最终 SHA-256。
 
-仍待长期决策：当前只有 migration id 1；未来 schemaVersion 变化需要增加显式迁移，不能复用类型断言。
+仍待长期决策：当前 migration id 2 已为 crash-safe command 状态增加显式列迁移；未来 schemaVersion 变化仍必须逐号增加迁移，不能复用类型断言。
 
 ### I3. 浏览器截图验收基线
 

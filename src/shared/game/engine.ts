@@ -107,6 +107,7 @@ function newRoundModifiers(): GameState['roundModifiers'] {
     virtualResist: {},
     cultivateBonus: {},
     exploreBonusDraw: {},
+    effectiveContributors: [],
     redirectedLightning: false,
   };
 }
@@ -164,6 +165,7 @@ function beginRound(state: GameState): void {
   state.targetedEffect = null;
   state.resolutionStep = 'none';
   state.lightning = null;
+  state.postLightningRecovery = null;
   state.crackContext = null;
   for (const player of state.players) {
     player.pendingPlan = null;
@@ -522,6 +524,10 @@ function resolveContributions(state: GameState): void {
   state.resolutionStep = 'resist';
   const resist = allocatePlayerContribution(state, 'resist', state.currentDemand);
   awardContributionMerit(state, 'resist', resist.used);
+  state.roundModifiers.effectiveContributors = Array.from(new Set([
+    ...Object.keys(repair.used),
+    ...Object.keys(resist.used),
+  ]));
   const usedResist = Object.values(resist.used).reduce((sum, value) => sum + value, 0);
   const virtualResist = Object.values(state.roundModifiers.virtualResist).reduce(
     (sum, value) => sum + value,
@@ -699,9 +705,10 @@ function resolveLightningHit(state: GameState): void {
       !victim.opportunityUsedThisRound &&
       cardAllowedByCalamity(state, 'C03', 'before_lightning')
     ) {
-      consumeCard(state, victim, 'C03');
-      victim.spirit = Math.min(spiritCap(state, victim), victim.spirit + 2);
-      addEvent(state, 'card_played', `${victim.name} 使用「回气散」恢复 2 灵力。`, victim.id);
+      state.postLightningRecovery = { seatId: victim.id };
+      state.phase = 'post_lightning_recovery';
+      state.phaseLabel = `${victim.name} 可使用回气散`;
+      return;
     }
   }
   startNextLightning(state);
@@ -1002,7 +1009,7 @@ function actionTargets(state: GameState, player: PlayerState, mode: string): Pla
       return state.players.filter(
         (candidate) =>
           candidate.id !== player.id &&
-          ['repair', 'resist'].includes(candidate.revealedPlan?.action ?? ''),
+          state.roundModifiers.effectiveContributors.includes(candidate.id),
       );
     default:
       return [];
@@ -1065,6 +1072,7 @@ function legalWindowCardActions(state: GameState, player: PlayerState): GameActi
     const matches = definition.equipment ? timing === 'opportunity' : meta.timing === timing;
     if (!matches || !cardAllowedByCalamity(state, cardId, timing)) continue;
     if (!cardPrecondition(state, player, cardId)) continue;
+    if (cardId === 'C06' || cardId === 'C15' || cardId === 'C22') continue;
 
     const base = { cardId };
     if (definition.equipment) {
@@ -1170,7 +1178,7 @@ function legalWindowCardActions(state: GameState, player: PlayerState): GameActi
           ),
         );
       }
-    } else {
+    } else if (meta.target === 'none' || meta.target === 'self') {
       actions.push(
         makeAction(
           state,
@@ -1537,6 +1545,26 @@ export function getLegalActions(state: GameState, seatId: SeatId): GameAction[] 
     case 'lightning_reaction': {
       const responder = state.lightning?.responderOrder[state.lightning.responderCursor];
       return responder === seatId ? legalLightningActions(state, player) : [];
+    }
+    case 'post_lightning_recovery': {
+      if (state.postLightningRecovery?.seatId !== seatId) return [];
+      return [
+        makeAction(
+          state,
+          seatId,
+          'USE_REACTION',
+          '使用「回气散」',
+          '弃置回气散，该次雷击结算后恢复 2 灵力。',
+          { cardId: 'C03' },
+        ),
+        makeAction(
+          state,
+          seatId,
+          'PASS_REACTION',
+          '保留回气散',
+          '不使用回气散，继续结算下一次雷击。',
+        ),
+      ];
     }
     case 'crack_reaction': {
       const responder =
@@ -2003,6 +2031,7 @@ const phaseSchema = z.enum([
   'recover_discard',
   'target_reaction',
   'lightning_reaction',
+  'post_lightning_recovery',
   'crack_reaction',
   'voting',
   'force_breach',
@@ -2113,6 +2142,9 @@ const lightningSchema = z.object({
   redirected: z.boolean(),
   cost: z.number().int().min(0),
 }).strict();
+const postLightningRecoverySchema = z.object({
+  seatId: seatIdSchema,
+}).strict();
 const crackSchema = z.object({
   responderOrder: z.array(seatIdSchema),
   responderCursor: z.number().int().min(0),
@@ -2128,6 +2160,7 @@ const roundModifiersSchema = z.object({
   virtualResist: z.record(seatIdSchema, z.number()),
   cultivateBonus: z.record(seatIdSchema, z.number()),
   exploreBonusDraw: z.record(seatIdSchema, z.number()),
+  effectiveContributors: z.array(seatIdSchema).default([]),
   redirectedLightning: z.boolean(),
 }).strict();
 const gameEventSchema = z.object({
@@ -2215,6 +2248,7 @@ const persistedGameStateSchema = z.object({
   targetedEffect: targetedEffectSchema.nullable(),
   resolutionStep: z.enum(['none', 'explore', 'cultivate', 'repair', 'resist']),
   lightning: lightningSchema.nullable(),
+  postLightningRecovery: postLightningRecoverySchema.nullable().default(null),
   crackContext: crackSchema.nullable(),
   forceBreachOrder: z.array(seatIdSchema),
   forceBreachCursor: z.number().int().min(0),
@@ -2227,7 +2261,7 @@ const persistedGameStateSchema = z.object({
   updatedAt: z.string().min(1),
 }).strict();
 
-export function assertValidGameState(value: unknown): asserts value is GameState {
+export function parseGameState(value: unknown): GameState {
   const state = persistedGameStateSchema.parse(value) as unknown as GameState;
   const seatIds = state.players.map((player) => player.id);
   if (new Set(seatIds).size !== seatIds.length) throw new Error('Duplicate player seat id');
@@ -2246,6 +2280,11 @@ export function assertValidGameState(value: unknown): asserts value is GameState
     throw new Error('Platform seat track invariant failed');
   }
   validateState(state);
+  return state;
+}
+
+export function assertValidGameState(value: unknown): asserts value is GameState {
+  parseGameState(value);
 }
 
 export function createGame(config: CreateGameConfig): GameState {
@@ -2255,6 +2294,10 @@ export function createGame(config: CreateGameConfig): GameState {
     throw new Error('《末法登仙台》只支持 4–6 人');
   }
   if (!Number.isInteger(config.seed)) throw new Error('Seed must be an integer');
+  const configuredSeatIds = config.seats.map((seat, index) => seat.id ?? `seat-${index + 1}`);
+  if (new Set(configuredSeatIds).size !== configuredSeatIds.length) {
+    throw new Error('座位 ID 不可重复');
+  }
 
   const explicitCharacters = config.seats.flatMap((seat) => (
     seat.characterId ? [seat.characterId] : []
@@ -2367,6 +2410,7 @@ export function createGame(config: CreateGameConfig): GameState {
     targetedEffect: null,
     resolutionStep: 'none',
     lightning: null,
+    postLightningRecovery: null,
     crackContext: null,
     forceBreachOrder: [],
     forceBreachCursor: 0,
@@ -2475,6 +2519,10 @@ export function applyAction(state: GameState, action: GameAction): GameState {
         finishTargetedEffect(next, player, false);
       }
       else if (next.phase === 'lightning_reaction') applyLightningReaction(next, player, action);
+      else if (next.phase === 'post_lightning_recovery') {
+        next.postLightningRecovery = null;
+        startNextLightning(next);
+      }
       else if (next.phase === 'crack_reaction') applyCrackReaction(next, player, action);
       break;
     case 'USE_REACTION':
@@ -2507,6 +2555,21 @@ export function applyAction(state: GameState, action: GameAction): GameState {
         finishTargetedEffect(next, player, true);
       } else if (next.phase === 'lightning_reaction') {
         applyLightningReaction(next, player, action);
+      } else if (
+        next.phase === 'post_lightning_recovery' &&
+        action.payload.cardId === 'C03'
+      ) {
+        consumeCard(next, player, 'C03');
+        player.spirit = Math.min(spiritCap(next, player), player.spirit + 2);
+        next.postLightningRecovery = null;
+        addEvent(
+          next,
+          'card_played',
+          `${player.name} 使用「回气散」恢复 2 灵力。`,
+          player.id,
+          { cardId: 'C03' },
+        );
+        startNextLightning(next);
       } else if (next.phase === 'crack_reaction') {
         applyCrackReaction(next, player, action);
       }

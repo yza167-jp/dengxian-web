@@ -1,4 +1,11 @@
-import { applyAction, assertActionBelongsToLegalSet, createGame, getLegalActions } from '../shared/game/engine';
+import {
+  applyAction,
+  assertActionBelongsToLegalSet,
+  createGame,
+  getLegalActions,
+  parseGameState,
+} from '../shared/game/engine';
+import { CHARACTERS } from '../shared/data/content';
 import { chooseHeuristicAction, publicBotMessage } from '../shared/game/bot';
 import { hashGameState } from '../shared/game/replay';
 import { getViewForSeat } from '../shared/game/view';
@@ -41,6 +48,33 @@ export interface RoomPayload {
 export interface SeatAuth {
   room: RoomPayload;
   seat: RoomSeat;
+}
+
+function restorePersistedGameState(room: RoomPayload): { state: GameState; repairedCharacters: boolean } {
+  if (!room.gameState) throw new Error('Game has not started');
+  try {
+    return { state: parseGameState(room.gameState), repairedCharacters: false };
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'Duplicate player character id') throw error;
+  }
+
+  const legacyState = structuredClone(room.gameState);
+  const used = new Set<CharacterId>();
+  for (const player of legacyState.players) {
+    if (!used.has(player.characterId)) {
+      used.add(player.characterId);
+      continue;
+    }
+    const replacement = CHARACTERS.find((character) => !used.has(character.id))?.id;
+    if (!replacement) throw new Error('Unable to repair duplicate persisted character');
+    player.characterId = replacement;
+    used.add(replacement);
+    const roomSeat = room.seats.find((seat) => seat.id === player.id);
+    if (roomSeat) roomSeat.characterId = replacement;
+    const initialSeat = room.initialConfig?.seats.find((seat) => seat.id === player.id);
+    if (initialSeat) initialSeat.characterId = replacement;
+  }
+  return { state: parseGameState(legacyState), repairedCharacters: true };
 }
 
 export interface RoomSnapshot {
@@ -575,6 +609,10 @@ export class RoomService {
     const disconnectedAt = new Date(this.now()).toISOString();
     for (const stored of this.storage.listRooms()) {
       const room = stored.payload as RoomPayload;
+      const restored = room.gameState
+        ? restorePersistedGameState(room)
+        : { state: null, repairedCharacters: false };
+      room.gameState = restored.state;
       const humanSeatIds: SeatId[] = [];
       for (const seat of room.seats) {
         if (seat.kind !== 'human') continue;
@@ -586,7 +624,7 @@ export class RoomService {
         humanSeatIds.push(seat.id);
       }
       const deadlineChanged = this.syncActionDeadline(room);
-      if (humanSeatIds.length === 0 && !deadlineChanged) continue;
+      if (humanSeatIds.length === 0 && !deadlineChanged && !restored.repairedCharacters) continue;
       this.storage.upsertRoom({
         id: room.id,
         code: room.code,
@@ -597,6 +635,7 @@ export class RoomService {
       this.storage.appendEvent(room.id, 'server_restart_disconnected', {
         seatIds: humanSeatIds,
         actionDeadlineAt: room.actionDeadlineAt,
+        repairedCharacters: restored.repairedCharacters,
       });
     }
   }
