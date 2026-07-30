@@ -2182,6 +2182,28 @@ textarea {
   background: transparent;
 }
 
+.mofa-action-dock:not(.is-secret-plan) {
+  grid-template-columns: minmax(138px, 0.5fr) minmax(0, 3fr);
+}
+
+.mofa-action-dock:not(.is-secret-plan) .mofa-action-grid {
+  justify-content: center;
+  align-items: stretch;
+}
+
+.mofa-action-dock:not(.is-secret-plan) .action-group {
+  flex: 1 1 220px;
+  max-width: 380px;
+  grid-template-rows: auto;
+  grid-auto-rows: minmax(54px, auto);
+  overflow-y: auto;
+}
+
+.mofa-action-dock:not(.is-secret-plan) .action-group button {
+  height: auto;
+  text-align: center;
+}
+
 .decision-sheet > .mofa-action-dock.is-secret-plan {
   grid-column: 2;
   grid-row: 1;
