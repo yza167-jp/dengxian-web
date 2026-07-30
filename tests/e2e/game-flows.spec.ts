@@ -11,6 +11,10 @@ async function clickAction(page: Page, name?: RegExp): Promise<boolean> {
     : dock.getByRole('button').first();
   if ((await button.count()) === 0 || !(await button.isVisible().catch(() => false))) return false;
   await button.click();
+  const confirm = dock.getByRole('button', { name: /确认行动/ });
+  if ((await confirm.count()) > 0 && await confirm.isEnabled().catch(() => false)) {
+    await confirm.click();
+  }
   // UI command handlers are intentionally fire-and-forget; allow the
   // authoritative snapshot to replace the clicked revision before acting again.
   await page.waitForTimeout(150);
@@ -120,6 +124,20 @@ test.describe('local play', () => {
     await page.goto('/');
     await page.getByRole('button', { name: '继续最近单人局' }).click();
     await expect(page.getByLabel('游戏桌面')).toBeVisible();
+  });
+
+  test('keeps records and chat secondary in dismissible edge drawers', async ({ page }) => {
+    await startSolo(page, '104');
+    await expect(page.getByLabel('对局记录抽屉')).toHaveCount(0);
+
+    await page.getByRole('button', { name: /^记录/ }).click();
+    await expect(page.getByLabel('对局记录抽屉')).toBeVisible();
+
+    await page.getByRole('button', { name: '关闭侧边抽屉' }).click();
+    await expect(page.getByLabel('对局记录抽屉')).toHaveCount(0);
+
+    await page.getByRole('button', { name: /^会话/ }).click();
+    await expect(page.getByLabel('公开会话抽屉')).toBeVisible();
   });
 
   test('completes a full local-bot game and renders the terminal settlement', async ({ page }) => {

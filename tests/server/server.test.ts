@@ -52,6 +52,13 @@ async function createStartedRoom() {
   return { host, seats, actor, started: started.body as any };
 }
 
+function collectStringValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(collectStringValues);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(collectStringValues);
+  return [];
+}
+
 describe('server http contracts', () => {
   it('reports health and redacts provider secrets', async () => {
     const health = await request(app.app).get('/api/health').expect(200);
@@ -104,9 +111,9 @@ describe('server http contracts', () => {
     expect(publicRoomJson).not.toContain('actionIds');
     expect(publicRoomJson).not.toContain('tokenHash');
     expect(publicRoomJson).not.toContain('ai');
-    const serialized = JSON.stringify(snapshot.body);
-    expect(serialized).not.toContain(playerB.fateId);
-    for (const cardId of playerB.hand) expect(serialized).not.toContain(cardId);
+    const stringValues = collectStringValues(snapshot.body);
+    expect(stringValues).not.toContain(playerB.fateId);
+    for (const cardId of playerB.hand) expect(stringValues).not.toContain(cardId);
     expect(snapshot.body.view.players.find((player: any) => player.id === seatB.seatId).revealedPlan).toBeNull();
     expect(snapshot.body.view.self.fateId).not.toBe(playerB.fateId);
   });

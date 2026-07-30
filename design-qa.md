@@ -2,6 +2,47 @@
 
 final result: passed
 
+## 2026-07-30 — 环坛式对局终验
+
+### Comparison target
+
+- Source visual truth: `/Users/dionysus/.codex/generated_images/019fb2e3-d753-75a3-aaed-ad0b82495fc9/call_oKHGSb3wxfeDPGa9ulDZWmSD.png` — 1487 × 1058 px.
+- Rendered implementation: `tmp/product-design-qa/ring-table-final-v8.jpeg` — 1260 × 768 px, captured from the user-selected Safari browser.
+- Combined comparison input: `tmp/product-design-qa/comparison-final-v2.png` — 2454 × 720 px.
+- Viewport normalization: the Safari page region was cropped to 1259 × 629 px after removing 139 px of browser chrome and retaining one-pixel crop compatibility; source and implementation were then independently aspect-fit to 720 px height and placed side by side at 1× screenshot density.
+- Browser scale: the Safari capture visibly uses a reduced page scale relative to CSS pixels; the approximate 80% value is inferred from the rendered dimensions, not read from browser settings.
+- State: six-player local game, round 1 secret plan, “修台 2” selected, confirmation enabled, record/chat drawers collapsed.
+
+The full 2310 × 720 comparison keeps the altar, all six player seats, private information, four action families, selected amount, and confirmation control readable, so no additional focused crop was necessary.
+
+### Fidelity verdict
+
+- Typography: compact Kai/Song-style Chinese hierarchy remains legible at the real Safari window height; phase, calamity, player, action, and private-state labels preserve distinct weights and sizes.
+- Spacing and layout: the altar owns the primary field; six seats ring the stage without collision; the decision sheet has a stable private column plus action column; record and chat remain secondary edge drawers.
+- Colors and tokens: ink black, aged gold, jade, cinnabar, and lightning violet stay consistent with the upstream art and the selected reference.
+- Image quality and assets: the stage, character portraits/cards, action illustrations, and table texture all reuse vendored upstream art. No placeholder art, emoji, CSS drawing, or runtime hotlink was introduced.
+- Copy and content: the central calamity, progress tracks, private fate, action families, investment amounts, and confirmation wording all come from the live rules view rather than decorative mock content.
+- Interaction: Safari manual play verified response-window progression, negotiation lock, secret-plan selection, two-step confirmation, record drawer open/close, and Escape dismissal.
+- Responsive and accessibility: the compact player cards intentionally replace the reference’s oversized circular medallions so six seats and their numeric state remain readable in a low-height desktop window. Buttons expose selected state, drawers expose expanded/collapsed state, and the page retains semantic labels and keyboard dismissal.
+
+### Iteration history
+
+- Iteration 1, score 67: rejected the pale world-map stage and clipped actions.
+- Iteration 2, score 84: restored the full altar artwork; action choices still clipped.
+- Iteration 3, score 89: fixed action visibility; private-area composition remained weak.
+- Iterations 4–8, score 91: refined decision-sheet density and isolated the apparent empty-space problem.
+- Iteration 9: Safari evidence exposed the actual cause—an inherited `grid-column: 1 / -1` rule made the secret-action dock overlap the private column.
+- Iteration 10, score 94: the two desktop decision columns became independent and all key controls were visible.
+- Iteration 11, score 92: static review found that the high-specificity desktop fix could override the 760 px single-column rule.
+- Iteration 12, score 94, passed: the narrow-screen override now has matching specificity; a fresh six-player Safari game confirmed the desktop state remains complete and stable.
+
+### Remaining intentional differences
+
+- Player seats use compact rectangular status cards instead of large circular medallions to preserve six-player numeric readability.
+- The implementation shows all four legal action families and embeds amount selection inside each action card; the reference depicts three larger cards plus a separate status column.
+
+Final result for the ring-table match layout: passed.
+
 ## Comparison target
 
 - Source visual truth:

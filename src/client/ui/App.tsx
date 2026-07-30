@@ -457,9 +457,19 @@ function GameTable() {
   const view = useGameStore((state) => state.view);
   const activePanel = useGameStore((state) => state.activePanel);
   const setActivePanel = useGameStore((state) => state.setActivePanel);
+  const chat = useGameStore((state) => state.chat);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   useEffect(() => {
     if (view?.outcome) navigate('/outcome');
   }, [navigate, view?.outcome]);
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDrawerOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [drawerOpen]);
   if (!view) {
     return (
       <section className="empty-state">
@@ -474,36 +484,81 @@ function GameTable() {
       aria-label="游戏桌面"
       style={artVariable('--table-art', ALTAR_ART)}
     >
-      <Scoreboard view={view} />
-      <CenterAltar view={view} />
-      <PlayerHand view={view} />
-      <ActionDock actions={view.legalActions} />
-      <aside className="side-rail">
-        <div className="tab-row" role="tablist" aria-label="日志与聊天">
-          <button className={activePanel === 'log' ? 'active' : ''} type="button" onClick={() => setActivePanel('log')}>日志</button>
-          <button className={activePanel === 'chat' ? 'active' : ''} type="button" onClick={() => setActivePanel('chat')}>聊天</button>
-        </div>
-        {activePanel === 'log' ? <EventLog view={view} /> : <ChatPanel />}
-      </aside>
+      <section className="ritual-stage" aria-label="环坛对局">
+        <CenterAltar view={view} />
+        <Scoreboard view={view} />
+      </section>
+      <section className="decision-sheet" aria-label="本轮决策">
+        <PlayerHand view={view} />
+        <ActionDock actions={view.legalActions} phaseLabel={view.phaseLabel} />
+      </section>
+      <button
+        className="edge-drawer-tab edge-drawer-tab-log"
+        type="button"
+        aria-controls="game-side-drawer"
+        aria-expanded={drawerOpen && activePanel === 'log'}
+        onClick={() => {
+          setActivePanel('log');
+          setDrawerOpen(drawerOpen && activePanel === 'log' ? false : true);
+        }}
+      >
+        <strong>记录</strong>
+        <span>{Math.min(view.events.length, 99)}</span>
+      </button>
+      <button
+        className="edge-drawer-tab edge-drawer-tab-chat"
+        type="button"
+        aria-controls="game-side-drawer"
+        aria-expanded={drawerOpen && activePanel === 'chat'}
+        onClick={() => {
+          setActivePanel('chat');
+          setDrawerOpen(drawerOpen && activePanel === 'chat' ? false : true);
+        }}
+      >
+        <strong>会话</strong>
+        <span>{Math.min(chat.length, 99)}</span>
+      </button>
+      {drawerOpen ? (
+        <aside id="game-side-drawer" className="side-rail" aria-label={activePanel === 'log' ? '对局记录抽屉' : '公开会话抽屉'}>
+          <header className="drawer-head">
+            <div className="tab-row" role="tablist" aria-label="记录与会话">
+              <button className={activePanel === 'log' ? 'active' : ''} type="button" onClick={() => setActivePanel('log')}>记录</button>
+              <button className={activePanel === 'chat' ? 'active' : ''} type="button" onClick={() => setActivePanel('chat')}>会话</button>
+            </div>
+            <button className="drawer-close" type="button" onClick={() => setDrawerOpen(false)} aria-label="关闭侧边抽屉">关闭</button>
+          </header>
+          {activePanel === 'log' ? <EventLog view={view} /> : <ChatPanel />}
+        </aside>
+      ) : null}
     </section>
   );
 }
 
 function Scoreboard({ view }: { view: GameView }) {
+  const self = view.players.find((player) => player.id === view.seatId);
+  const players = [
+    ...view.players.filter((player) => player.id !== view.seatId),
+    ...(self ? [self] : []),
+  ];
   return (
     <div className="scoreboard" aria-label="玩家公开状态">
-      {view.players.map((player) => (
-        <PlayerToken key={player.id} player={player} active={player.id === view.seatId} />
+      {players.map((player, index) => (
+        <PlayerToken
+          key={player.id}
+          player={player}
+          active={player.id === view.seatId}
+          position={player.id === view.seatId ? 'self' : `seat-${index + 1}`}
+        />
       ))}
     </div>
   );
 }
 
-function PlayerToken({ player, active }: { player: PublicPlayerView; active: boolean }) {
+function PlayerToken({ player, active, position }: { player: PublicPlayerView; active: boolean; position: string }) {
   const character = CHARACTER_BY_ID.get(player.characterId);
   const revealedChoice = player.revealedPlan?.action;
   return (
-    <article className={`player-token ${active ? 'active' : ''}`}>
+    <article className={`player-token ${active ? 'active' : ''}`} data-seat-position={position}>
       <div className="mofa-player-identity">
         <img
           src={characterPortraitPath(player.characterId)}
@@ -556,27 +611,33 @@ function CenterAltar({ view }: { view: GameView }) {
         <strong>{view.phaseLabel}</strong>
         <small>修订 {view.revision}</small>
       </div>
-      <article
-        className="calamity-card zoomable mofa-calamity-card"
-        tabIndex={0}
-        style={artVariable('--calamity-art', ALTAR_ART)}
-      >
-        <p className="eyebrow">{calamity?.stage ?? '天劫'}</p>
-        <h2>{calamity?.name ?? view.currentCalamity}</h2>
-        <p>{calamity?.effect ?? '等待天劫揭示。'}</p>
-        <small>抗劫需求 {view.currentDemand}</small>
-      </article>
-      <div className="platform-meter" aria-label="登仙台进度">
-        <label>主台 {view.platform.mainProgress}/{view.platform.mainRequired}</label>
-        <progress value={view.platform.mainProgress} max={view.platform.mainRequired} />
-        <label>席位 {seatDone}/{view.platform.seatRequirements.length}</label>
-        <div className="seat-meters">
-          {view.platform.seatRequirements.map((required, index) => (
-            <progress key={required + index} value={view.platform.seatProgress[index] ?? 0} max={required} aria-label={`席位 ${index + 1}`} />
-          ))}
-        </div>
-        <div className="cracks" aria-label={`裂痕 ${view.platform.cracks} 道`}>
-          {[0, 1, 2].map((index) => <span key={index} className={index < view.platform.cracks ? 'lit' : ''} />)}
+      <div className="altar-board">
+        <article
+          className="calamity-card zoomable mofa-calamity-card"
+          tabIndex={0}
+          style={artVariable('--calamity-art', ALTAR_ART)}
+        >
+          <p className="eyebrow">{calamity?.stage ?? '天劫'}</p>
+          <h2>{calamity?.name ?? view.currentCalamity}</h2>
+          <p>{calamity?.effect ?? '等待天劫揭示。'}</p>
+          <small>抗劫需求 {view.currentDemand}</small>
+        </article>
+        <div className="platform-meter" aria-label="登仙台进度">
+          <div className="main-progress">
+            <label>主台 {view.platform.mainProgress}/{view.platform.mainRequired}</label>
+            <progress value={view.platform.mainProgress} max={view.platform.mainRequired} />
+          </div>
+          <div className="seat-progress">
+            <label>席位 {seatDone}/{view.platform.seatRequirements.length}</label>
+            <div className="seat-meters">
+              {view.platform.seatRequirements.map((required, index) => (
+                <progress key={required + index} value={view.platform.seatProgress[index] ?? 0} max={required} aria-label={`席位 ${index + 1}`} />
+              ))}
+            </div>
+          </div>
+          <div className="cracks" aria-label={`裂痕 ${view.platform.cracks} 道`}>
+            {[0, 1, 2].map((index) => <span key={index} className={index < view.platform.cracks ? 'lit' : ''} />)}
+          </div>
         </div>
       </div>
     </section>
@@ -589,15 +650,15 @@ function PlayerHand({ view }: { view: GameView }) {
   const fate = view.self ? FATE_BY_ID.get(view.self.fateId) : null;
   const selfPlayer = view.players.find((player) => player.id === view.seatId) ?? null;
   const selfCharacter = selfPlayer ? CHARACTER_BY_ID.get(selfPlayer.characterId) : null;
+  const hand = view.self?.hand ?? [];
   return (
-    <section className="hand-zone" aria-label="私有区域">
+    <section className={`hand-zone${hand.length === 0 ? ' is-empty-hand' : ''}`} aria-label="私有区域">
       <article
         className="secret-card zoomable mofa-self-card"
         tabIndex={0}
         data-character-id={selfPlayer?.characterId}
         style={selfPlayer ? artVariable('--character-art', characterCardPath(selfPlayer.characterId)) : undefined}
       >
-        <span className="lock locked">天命密封</span>
         {selfPlayer ? (
           <img
             src={characterCardPath(selfPlayer.characterId)}
@@ -606,40 +667,49 @@ function PlayerHand({ view }: { view: GameView }) {
             className="mofa-self-portrait"
           />
         ) : null}
-        {selfCharacter ? (
-          <>
-            <h3>{selfCharacter.name}</h3>
-            <p>{selfCharacter.ability.name}：{selfCharacter.ability.effect}</p>
-          </>
-        ) : null}
-        <h3>{fate?.name ?? '旁观席'}</h3>
-        <p>{fate ? `${fate.mainFate}（${fate.mainReward}）` : '无私有天命'}</p>
-        <p>{fate ? `${fate.obsession}（${fate.obsessionReward}）` : ''}</p>
+        <div className="mofa-self-copy">
+          <span className="lock locked">仅你可见</span>
+          <h3>{selfCharacter?.name ?? '旁观席'}</h3>
+          <p>{selfCharacter ? `${selfCharacter.ability.name}：${selfCharacter.ability.effect}` : '无人物能力'}</p>
+          {selfPlayer ? (
+            <dl className="private-stats">
+              <div><dt>灵</dt><dd>{selfPlayer.spirit}</dd></div>
+              <div><dt>修</dt><dd>{selfPlayer.cultivation}</dd></div>
+              <div><dt>德</dt><dd>{selfPlayer.merit}</dd></div>
+              <div><dt>手</dt><dd>{selfPlayer.handCount}</dd></div>
+            </dl>
+          ) : null}
+          <strong>{fate?.name ?? '无私有天命'}</strong>
+          <small>{fate ? `${fate.mainFate} · ${fate.obsession}` : '当前没有私有目标'}</small>
+        </div>
       </article>
-      <div className="cards">
-        {(view.self?.hand ?? []).map((cardId) => {
-          const card = OPPORTUNITY_BY_ID.get(cardId);
-          return (
-            <button
-              key={cardId}
-              className={`hand-card zoomable ${selectedCardId === cardId ? 'selected' : ''}`}
-              type="button"
-              onClick={() => selectCard(selectedCardId === cardId ? null : cardId)}
-              aria-pressed={selectedCardId === cardId}
-            >
-              <strong>{card?.name ?? cardId}</strong>
-              <span>{card?.type ?? '机缘'}</span>
-              <small>{card?.effect ?? '未知效果'}</small>
-            </button>
-          );
-        })}
-      </div>
+      {hand.length > 0 ? (
+        <div className="cards">
+          {hand.map((cardId) => {
+            const card = OPPORTUNITY_BY_ID.get(cardId);
+            return (
+              <button
+                key={cardId}
+                className={`hand-card zoomable ${selectedCardId === cardId ? 'selected' : ''}`}
+                type="button"
+                onClick={() => selectCard(selectedCardId === cardId ? null : cardId)}
+                aria-pressed={selectedCardId === cardId}
+              >
+                <strong>{card?.name ?? cardId}</strong>
+                <span>{card?.type ?? '机缘'}</span>
+                <small>{card?.effect ?? '未知效果'}</small>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function ActionDock({ actions }: { actions: GameAction[] }) {
+function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel: string }) {
   const submitAction = useGameStore((state) => state.submitAction);
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
   const grouped = useMemo(() => actions.reduce<Record<string, GameAction[]>>((acc, action) => {
     (acc[action.type] ??= []).push(action);
     return acc;
@@ -652,46 +722,105 @@ function ActionDock({ actions }: { actions: GameAction[] }) {
       return matching.length > 0 ? [[choice, matching] as const] : [];
     });
   }, [actions, grouped, isSecretPlan]);
+  useEffect(() => {
+    if (selectedActionId && !actions.some((action) => action.id === selectedActionId)) {
+      setSelectedActionId(null);
+    }
+  }, [actions, selectedActionId]);
+  const selectedAction = actions.find((action) => action.id === selectedActionId) ?? null;
+  const performAction = (action: GameAction) => {
+    ritualAudio.pulse(action.type.includes('VOTE') || action.type.includes('PLAN') ? 'reveal' : 'action');
+    void submitAction(action.id);
+    setSelectedActionId(null);
+  };
   return (
     <section
       className={`action-dock mofa-action-dock${isSecretPlan ? ' is-secret-plan' : ''}`}
       aria-label="合法动作"
       style={artVariable('--action-dock-art', '/assets/upstream/web/04-每轮秘密四选一-720.webp')}
     >
-      {actions.length === 0 ? <p>等待其他席位锁定或响应。</p> : null}
-      {actionGroups.map(([type, list]) => (
-        <div key={type} className="action-group" data-action-group={type}>
-          <h3>{isSecretPlan && isActionChoice(type) ? ACTION_NAMES[type] : actionTypeName(type)}</h3>
-          {list.slice(0, 18).map((action) => {
-            const choice = actionChoiceFromAction(action);
-            return (
-              <button
-                key={action.id}
-                className={choice ? 'mofa-action-button has-action-art' : 'mofa-action-button'}
-                data-action-choice={choice ?? undefined}
-                type="button"
-                onClick={() => {
-                  ritualAudio.pulse(action.type.includes('VOTE') || action.type.includes('PLAN') ? 'reveal' : 'action');
-                  void submitAction(action.id);
-                }}
-                aria-label={`${action.label}：${action.description}`}
-                style={choice ? artVariable('--action-art', actionArtPath(choice)) : undefined}
-              >
-                {choice ? (
-                  <img
-                    src={actionArtPath(choice)}
-                    alt={`${ACTION_NAMES[choice]}行动图`}
-                    loading="lazy"
-                    className="mofa-action-art"
-                  />
-                ) : null}
-                <strong>{action.label}</strong>
-                <small>{action.description}</small>
-              </button>
-            );
-          })}
-        </div>
-      ))}
+      <header className="decision-heading">
+        <span>{phaseLabel}</span>
+        <strong>{actions.length > 0 ? (isSecretPlan ? '选择一项行动' : '请作出响应') : '等待其他席位'}</strong>
+        <small>{isSecretPlan ? '选择后确认，本轮计划才会锁定。' : '当前只显示此刻可执行的动作。'}</small>
+      </header>
+      <div className="mofa-action-grid">
+        {actions.length === 0 ? <p className="waiting-copy">其他修士正在落子。</p> : null}
+        {actionGroups.map(([type, list]) => (
+          <div key={type} className="action-group" data-action-group={type}>
+            <h3>{isSecretPlan && isActionChoice(type) ? ACTION_NAMES[type] : actionTypeName(type)}</h3>
+            {isSecretPlan && isActionChoice(type) ? (
+              <article className="mofa-plan-card">
+                <img
+                  src={actionArtPath(type)}
+                  alt={`${ACTION_NAMES[type]}行动图`}
+                  loading="lazy"
+                  className="mofa-action-art"
+                />
+                <div className="plan-action-options">
+                  {list.slice(0, 18).map((action) => {
+                    const selected = selectedActionId === action.id;
+                    return (
+                      <button
+                        key={action.id}
+                        className={`plan-action-option${selected ? ' selected' : ''}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedActionId(action.id);
+                          ritualAudio.pulse('reveal');
+                        }}
+                        aria-label={`${action.label}：${action.description}`}
+                        aria-pressed={selected}
+                      >
+                        {action.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+            ) : (
+              list.slice(0, 18).map((action) => {
+                const choice = actionChoiceFromAction(action);
+                return (
+                  <button
+                    key={action.id}
+                    className={choice ? 'mofa-action-button has-action-art' : 'mofa-action-button'}
+                    data-action-choice={choice ?? undefined}
+                    type="button"
+                    onClick={() => performAction(action)}
+                    aria-label={`${action.label}：${action.description}`}
+                    style={choice ? artVariable('--action-art', actionArtPath(choice)) : undefined}
+                  >
+                    {choice ? (
+                      <img
+                        src={actionArtPath(choice)}
+                        alt={`${ACTION_NAMES[choice]}行动图`}
+                        loading="lazy"
+                        className="mofa-action-art"
+                      />
+                    ) : null}
+                    <strong>{action.label}</strong>
+                    <small>{action.description}</small>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        ))}
+      </div>
+      {isSecretPlan ? (
+        <button
+          className="decision-confirm"
+          type="button"
+          disabled={!selectedAction}
+          onClick={() => {
+            if (selectedAction) performAction(selectedAction);
+          }}
+        >
+          <strong>确认行动</strong>
+          <small>{selectedAction?.label ?? '先选择一项计划'}</small>
+        </button>
+      ) : null}
     </section>
   );
 }

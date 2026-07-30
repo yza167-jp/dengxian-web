@@ -87,15 +87,15 @@ test.describe('upstream art usage', () => {
     await advanceToSecretPlanning(page);
     const actionDock = page.getByLabel('合法动作');
 
-    const planButtons = [
-      actionDock.getByRole('button', { name: /修炼/ }).first(),
-      actionDock.getByRole('button', { name: /修台/ }).first(),
-      actionDock.getByRole('button', { name: /抗劫/ }).first(),
-      actionDock.getByRole('button', { name: /探索/ }).first(),
+    const planChoices = [
+      { button: actionDock.getByRole('button', { name: /修炼/ }).first(), group: 'cultivate' },
+      { button: actionDock.getByRole('button', { name: /修台/ }).first(), group: 'repair' },
+      { button: actionDock.getByRole('button', { name: /抗劫/ }).first(), group: 'resist' },
+      { button: actionDock.getByRole('button', { name: /探索/ }).first(), group: 'explore' },
     ];
-    for (const button of planButtons) {
+    for (const { button, group } of planChoices) {
       await expect(button).toBeVisible();
-      await expectImagesLoaded(button.locator('img'), 1);
+      await expectImagesLoaded(actionDock.locator(`[data-action-group="${group}"] img`), 1);
     }
   });
 
