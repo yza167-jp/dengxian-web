@@ -342,6 +342,64 @@ describe('server http contracts', () => {
     expect(afterHuman.body.room.chat.some((entry: any) => entry.seatId.startsWith('seat-'))).toBe(true);
   });
 
+  it('emits bounded structured AI diagnostics without prompts or reasoning', async () => {
+    const storage = new ServerStorage(':memory:');
+    const logs: Array<Record<string, unknown>> = [];
+    const rooms = new RoomService(storage, { log: (event) => logs.push(event) });
+    try {
+      const host = rooms.createRoom({ hostName: '甲', maxSeats: 4, seed: 1235 });
+      for (let index = 0; index < 3; index += 1) {
+        rooms.addBot({
+          roomId: host.room.id,
+          seatId: host.seatId,
+          seatToken: host.seatToken,
+          name: `Bot ${index + 1}`,
+          ai: { provider: 'local-bot', difficulty: 'normal', persona: 'steady' },
+        });
+      }
+      rooms.ready({
+        roomId: host.room.id,
+        seatId: host.seatId,
+        seatToken: host.seatToken,
+        ready: true,
+      });
+      let snapshot = await rooms.start({
+        roomId: host.room.id,
+        seatId: host.seatId,
+        seatToken: host.seatToken,
+      });
+      for (let index = 0; logs.length === 0 && index < 6; index += 1) {
+        const action = snapshot.view?.legalActions[0];
+        if (!action) break;
+        snapshot = await rooms.applyCommand({
+          roomId: host.room.id,
+          seatId: host.seatId,
+          seatToken: host.seatToken,
+          commandId: `diagnostic-command-${index}`,
+          baseRevision: snapshot.view!.revision,
+          actionId: action.id,
+        });
+      }
+
+      expect(logs.length).toBeGreaterThan(0);
+      expect(logs[0]).toMatchObject({
+        event: 'ai_decision',
+        roomId: host.room.id,
+        provider: 'local-bot',
+        model: 'heuristic-v1',
+        retryCount: 0,
+        requestMode: 'local',
+        usedFallback: false,
+      });
+      const encoded = JSON.stringify(logs);
+      expect(encoded).not.toContain('reasoning');
+      expect(encoded).not.toContain('prompt');
+      expect(encoded).not.toContain('API_KEY');
+    } finally {
+      storage.close();
+    }
+  });
+
   it('persists host-scoped saves without exposing canonical payloads', async () => {
     const { host } = await createStartedRoom();
     const auth = { roomId: host.room.id, seatId: host.seatId, seatToken: host.seatToken };

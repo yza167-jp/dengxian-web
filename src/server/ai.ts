@@ -18,6 +18,11 @@ const providerResponseSchema = z.object({
       })).optional(),
     }),
   })).min(1),
+  usage: z.object({
+    prompt_tokens: z.number().int().min(0).optional(),
+    completion_tokens: z.number().int().min(0).optional(),
+    total_tokens: z.number().int().min(0).optional(),
+  }).optional(),
 });
 
 export interface AiMoveRequest {
@@ -32,10 +37,23 @@ export interface AiMoveResponse {
   reasoning: string;
   provider: AiSeatConfig['provider'];
   usedFallback: boolean;
+  model: string;
+  requestedModel: string;
+  latencyMs: number;
+  retryCount: number;
+  requestMode: ProviderRequestMode | 'local';
+  tokenUsage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    totalTokens?: number;
+  };
 }
 
 const circuits = new Map<string, { failures: number; openedUntil: number }>();
 type ProviderRequestMode = 'tool' | 'json';
+interface AttemptDiagnostics {
+  retryCount: number;
+}
 
 class ProviderHttpError extends Error {
   constructor(
@@ -91,6 +109,9 @@ function localDecision(
   request: AiMoveRequest,
   reason: string,
   usedFallback: boolean,
+  requestedModel: string,
+  retryCount: number,
+  startedAt: number,
 ): AiMoveResponse {
   const legal = request.legalActions[0]!;
   return {
@@ -98,6 +119,11 @@ function localDecision(
     reasoning: `${reason} 选择“${legal.label}”。`,
     provider: 'local-bot',
     usedFallback,
+    model: 'heuristic-v1',
+    requestedModel,
+    latencyMs: Date.now() - startedAt,
+    retryCount,
+    requestMode: 'local',
   };
 }
 
@@ -191,6 +217,8 @@ async function requestProvider(
   request: AiMoveRequest,
   mode: ProviderRequestMode,
   deadline: number,
+  diagnostics: AttemptDiagnostics,
+  startedAt: number,
 ): Promise<AiMoveResponse> {
   const cfg = providerConfig(request.seatConfig, mode);
   if (!cfg.key) throw new Error('provider api key is not configured');
@@ -259,6 +287,16 @@ async function requestProvider(
         reasoning: parsed.reasoning,
         provider: request.seatConfig.provider,
         usedFallback: false,
+        model: cfg.model,
+        requestedModel: cfg.model,
+        latencyMs: Date.now() - startedAt,
+        retryCount: diagnostics.retryCount,
+        requestMode: mode,
+        tokenUsage: raw.usage ? {
+          promptTokens: raw.usage.prompt_tokens,
+          completionTokens: raw.usage.completion_tokens,
+          totalTokens: raw.usage.total_tokens,
+        } : undefined,
       };
     } catch (error) {
       if (error instanceof ProviderOutputError) throw error;
@@ -274,9 +312,11 @@ async function requestWithRetries(
   mode: ProviderRequestMode,
   attempt: number,
   deadline: number,
+  diagnostics: AttemptDiagnostics,
+  startedAt: number,
 ): Promise<AiMoveResponse> {
   try {
-    return await requestProvider(request, mode, deadline);
+    return await requestProvider(request, mode, deadline, diagnostics, startedAt);
   } catch (error) {
     const maxRetries = Math.floor(numericEnv('AI_MAX_RETRIES', 2));
     if (!isTransientProviderError(error) || attempt >= maxRetries || Date.now() >= deadline) {
@@ -287,13 +327,16 @@ async function requestWithRetries(
       : 120 * 2 ** attempt + Math.floor(Math.random() * 120);
     const delay = Math.min(requestedDelay, Math.max(0, deadline - Date.now()));
     if (delay > 0) await sleep(delay);
-    return requestWithRetries(request, mode, attempt + 1, deadline);
+    diagnostics.retryCount += 1;
+    return requestWithRetries(request, mode, attempt + 1, deadline, diagnostics, startedAt);
   }
 }
 
 async function callOpenAiCompatible(
   request: AiMoveRequest,
   deadline: number,
+  diagnostics: AttemptDiagnostics,
+  startedAt: number,
 ): Promise<AiMoveResponse> {
   const toolConfig = providerConfig(request.seatConfig, 'tool');
   const jsonConfig = providerConfig(request.seatConfig, 'json');
@@ -307,10 +350,10 @@ async function callOpenAiCompatible(
   try {
     let result: AiMoveResponse;
     try {
-      result = await requestWithRetries(request, 'tool', 0, deadline);
+      result = await requestWithRetries(request, 'tool', 0, deadline, diagnostics, startedAt);
     } catch (error) {
       if (!isToolUnsupported(error)) throw error;
-      result = await requestWithRetries(request, 'json', 0, deadline);
+      result = await requestWithRetries(request, 'json', 0, deadline, diagnostics, startedAt);
     }
     circuits.set(circuitKey, { failures: 0, openedUntil: 0 });
     return result;
@@ -329,15 +372,36 @@ async function callOpenAiCompatible(
 }
 
 export async function chooseAiMove(request: AiMoveRequest): Promise<AiMoveResponse> {
+  const startedAt = Date.now();
+  const diagnostics: AttemptDiagnostics = { retryCount: 0 };
+  const requestedModel = request.seatConfig.provider === 'local-bot'
+    ? 'heuristic-v1'
+    : providerConfig(request.seatConfig, 'tool').model;
   if (request.seatConfig.provider === 'local-bot') {
-    return localDecision(request, '本地启发式决策。', false);
+    return localDecision(
+      request,
+      '本地启发式决策。',
+      false,
+      requestedModel,
+      diagnostics.retryCount,
+      startedAt,
+    );
   }
   try {
     return await callOpenAiCompatible(
       request,
       Date.now() + numericEnv('AI_MAX_TOTAL_WAIT_MS', 28_000),
+      diagnostics,
+      startedAt,
     );
   } catch {
-    return localDecision(request, '外部模型不可用，已使用本地启发式决策。', true);
+    return localDecision(
+      request,
+      '外部模型不可用，已使用本地启发式决策。',
+      true,
+      requestedModel,
+      diagnostics.retryCount,
+      startedAt,
+    );
   }
 }

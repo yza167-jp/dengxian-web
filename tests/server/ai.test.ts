@@ -39,6 +39,7 @@ function aiRequest(): AiMoveRequest {
   return {
     seatConfig: {
       provider: 'deepseek',
+      model: 'deepseek-v4-flash',
       difficulty: 'normal',
       persona: 'steady',
       thinking: false,
@@ -51,8 +52,8 @@ function aiRequest(): AiMoveRequest {
 function providerResponse(message: {
   content?: string | null;
   tool_calls?: Array<{ function: { arguments: string } }>;
-}): Response {
-  return new Response(JSON.stringify({ choices: [{ message }] }), {
+}, usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }): Response {
+  return new Response(JSON.stringify({ choices: [{ message }], usage }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
@@ -89,12 +90,26 @@ describe('AI provider validation and fallback', () => {
             arguments: JSON.stringify({ actionId: selected.id, reasoning: '工具调用选择。' }),
           },
         }],
+      }, {
+        prompt_tokens: 31,
+        completion_tokens: 7,
+        total_tokens: 38,
       }));
     });
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await chooseAiMove(request);
-    expect(result).toMatchObject({ actionId: selected.id, usedFallback: false, provider: 'deepseek' });
+    expect(result).toMatchObject({
+      actionId: selected.id,
+      usedFallback: false,
+      provider: 'deepseek',
+      requestedModel: 'deepseek-v4-flash',
+      model: 'deepseek-v4-flash',
+      retryCount: 0,
+      requestMode: 'tool',
+      tokenUsage: { promptTokens: 31, completionTokens: 7, totalTokens: 38 },
+    });
+    expect(result.latencyMs).toBeGreaterThanOrEqual(0);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -138,7 +153,13 @@ describe('AI provider validation and fallback', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await chooseAiMove(request);
-    expect(result).toMatchObject({ actionId: selected.id, usedFallback: false, provider: 'deepseek' });
+    expect(result).toMatchObject({
+      actionId: selected.id,
+      usedFallback: false,
+      provider: 'deepseek',
+      requestMode: 'json',
+      retryCount: 0,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -176,7 +197,7 @@ describe('AI provider validation and fallback', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await chooseAiMove(request);
-    expect(result).toMatchObject({ actionId: selected.id, usedFallback: false });
+    expect(result).toMatchObject({ actionId: selected.id, usedFallback: false, retryCount: 1 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

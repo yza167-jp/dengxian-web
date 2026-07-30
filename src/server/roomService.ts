@@ -117,10 +117,16 @@ export class RoomService {
   private readonly now: () => number;
   private readonly actionTimeoutMs: number;
   private readonly sessionTokenTtlMs: number;
+  private readonly log: (event: Record<string, unknown>) => void;
 
   constructor(
     private readonly storage: ServerStorage,
-    options: { now?: () => number; actionTimeoutMs?: number; sessionTokenTtlDays?: number } = {},
+    options: {
+      now?: () => number;
+      actionTimeoutMs?: number;
+      sessionTokenTtlDays?: number;
+      log?: (event: Record<string, unknown>) => void;
+    } = {},
   ) {
     this.now = options.now ?? Date.now;
     this.actionTimeoutMs = Math.max(
@@ -132,6 +138,11 @@ export class RoomService {
       (options.sessionTokenTtlDays ?? Number(process.env.SESSION_TOKEN_TTL_DAYS ?? 30))
         * 24 * 60 * 60 * 1_000,
     );
+    this.log = options.log ?? ((event) => {
+      if (process.env.NODE_ENV !== 'test' && process.env.LOG_LEVEL !== 'silent') {
+        console.info(JSON.stringify(event));
+      }
+    });
     this.markPersistedHumansDisconnected();
   }
 
@@ -665,6 +676,12 @@ export class RoomService {
       const configuredProvider = bot.ai?.provider ?? 'local-bot';
       let usedProvider: AiSeatConfig['provider'] = 'local-bot';
       let usedFallback = false;
+      let usedModel = 'heuristic-v1';
+      let requestedModel = 'heuristic-v1';
+      let latencyMs = 0;
+      let retryCount = 0;
+      let requestMode: 'tool' | 'json' | 'local' = 'local';
+      let tokenUsage: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined;
       if (bot.ai?.provider && bot.ai.provider !== 'local-bot') {
         const ai = await chooseAiMove({
           seatConfig: bot.ai,
@@ -674,6 +691,12 @@ export class RoomService {
         });
         usedProvider = ai.provider;
         usedFallback = ai.usedFallback;
+        usedModel = ai.model;
+        requestedModel = ai.requestedModel;
+        latencyMs = ai.latencyMs;
+        retryCount = ai.retryCount;
+        requestMode = ai.requestMode;
+        tokenUsage = ai.tokenUsage;
         if (!ai.usedFallback && legalActions.some((action) => action.id === ai.actionId)) {
           actionId = ai.actionId;
         }
@@ -694,12 +717,34 @@ export class RoomService {
       });
       room.chat = room.chat.slice(-100);
       if (room.gameState.outcome) room.status = 'finished';
+      this.log({
+        event: 'ai_decision',
+        roomId: room.id,
+        turnId: `${room.id}:${state.revision}:${bot.id}`,
+        seatId: bot.id,
+        actionId: action.id,
+        configuredProvider,
+        provider: usedProvider,
+        model: usedModel,
+        requestedModel,
+        latencyMs,
+        retryCount,
+        requestMode,
+        tokenUsage,
+        usedFallback,
+      });
       this.save(room, 'ai_command_applied', {
         seatId: bot.id,
         actionId: action.id,
         revision: room.gameState.revision,
         configuredProvider,
         usedProvider,
+        model: usedModel,
+        requestedModel,
+        latencyMs,
+        retryCount,
+        requestMode,
+        tokenUsage,
         usedFallback,
       });
       room = this.getRoom(roomId);

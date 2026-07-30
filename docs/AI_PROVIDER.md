@@ -80,7 +80,8 @@ Room automation computes a legal heuristic decision first. External providers ma
 
 Verified behavior:
 
-- `npm test` passed 57 tests, including strict tool-call, tool-rejection → JSON-only transition, non-retryable 401, `Retry-After`, timeout, 429, illegal-action, no-key fallback, private-rationale isolation and non-exposure of `reasoning_content`.
+- Each AI turn emits a bounded structured diagnostic with room/turn/seat IDs, configured and actual provider/model, request mode, latency, retry count, token usage when returned, and fallback status. Prompts, API keys, private views, and model reasoning are excluded.
+- `npm test` passed 58 tests, including strict tool-call, tool-rejection → JSON-only transition, non-retryable 401, `Retry-After`, timeout, 429, illegal-action, no-key fallback, structured diagnostics, private-rationale isolation and non-exposure of `reasoning_content`.
 - `npm run sim` passed 120 all-bot games across 4, 5, and 6 players.
 
 ## Live-call boundary

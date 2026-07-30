@@ -9,7 +9,7 @@
 | `npm audit` | Last successful lock check: Pass | 0 vulnerabilities；本轮重试被 npm registry TLS 中断，依赖与 lockfile 未变化 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 5 files，57 tests |
+| `npm test` | Pass | 5 files，58 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
@@ -56,6 +56,7 @@ Playwright 覆盖：
 - 座位令牌只存哈希并受 `SESSION_TOKEN_TTL_DAYS` 控制；过期令牌无法认证，过期时间不进入公开房间快照。
 - 在线动作截止时间与修订号一同持久化；超时会执行合法的安全默认动作、写入事件与动作账本，并为下一待决状态生成新截止时间。
 - DeepSeek 严格 tool call、工具拒绝后的 JSON-only 请求、超时、HTTP 429/`Retry-After`、非重试 401、非法 actionId 和无 Key 场景均受 mock 测试覆盖；失败自动回退，模型自由文本不会进入公共聊天。
+- AI 结构化诊断记录 provider、实际与请求模型、延迟、token usage、重试、request mode 和 fallback；测试断言日志中没有 prompt、API Key 或模型 reasoning。
 
 ## Provider 实测边界
 
