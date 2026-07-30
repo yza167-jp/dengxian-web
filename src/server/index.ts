@@ -154,12 +154,14 @@ export function createApp(options: {
   storage?: ServerStorage;
   now?: () => number;
   actionTimeoutMs?: number;
+  sessionTokenTtlDays?: number;
   timeoutSweepMs?: number;
 } = {}) {
   const storage = options.storage ?? new ServerStorage();
   const rooms = new RoomService(storage, {
     now: options.now,
     actionTimeoutMs: options.actionTimeoutMs,
+    sessionTokenTtlDays: options.sessionTokenTtlDays,
   });
   const app = express();
   const server = createServer(app);

@@ -68,6 +68,7 @@ curl http://127.0.0.1:8787/api/health
 | `PORT` | HTTP / Socket.IO 端口 | `8787` |
 | `DATABASE_PATH` | SQLite 文件 | `./data/dengxian.sqlite` |
 | `PUBLIC_ORIGIN` | 对外访问源 | `http://localhost:8787` |
+| `SESSION_TOKEN_TTL_DAYS` | 座位重连令牌的服务端有效期 | `30` |
 | `ACTION_TIMEOUT_MS` | 在线动作倒计时；超时后服务端执行安全默认动作 | `90000` |
 | `DISCONNECT_GRACE_MS` | 断线后允许房主启用临时 Bot 的宽限期 | `120000` |
 | `DEEPSEEK_API_KEY` | DeepSeek 服务端密钥 | 空 |
@@ -93,7 +94,7 @@ docker compose up --build
 npm run verify
 ```
 
-该命令依次执行上游同步、依赖审计、类型检查、lint、55 项 Vitest、120 局 4/5/6 人模拟、生产构建和 16 项 Playwright E2E。Playwright 默认在独立的 `8797` 端口启动生产服务，避免与 `npm run dev` 使用的 `8787` API 服务冲突；可通过 `E2E_PORT` 覆盖。也可单独运行：
+该命令依次执行上游同步、依赖审计、类型检查、lint、56 项 Vitest、120 局 4/5/6 人模拟、生产构建和 16 项 Playwright E2E。Playwright 默认在独立的 `8797` 端口启动生产服务，避免与 `npm run dev` 使用的 `8787` API 服务冲突；可通过 `E2E_PORT` 覆盖。也可单独运行：
 
 ```bash
 npm run typecheck

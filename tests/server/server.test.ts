@@ -117,6 +117,24 @@ describe('server http contracts', () => {
     }).expect(422, { error: 'Command id already used with different payload' });
   });
 
+  it('expires seat tokens at the configured server-side TTL', () => {
+    const storage = new ServerStorage(':memory:');
+    let now = Date.parse('2026-07-31T00:00:00.000Z');
+    const rooms = new RoomService(storage, {
+      now: () => now,
+      sessionTokenTtlDays: 1,
+    });
+    try {
+      const host = rooms.createRoom({ hostName: '甲', maxSeats: 4, seed: 403 });
+      expect(() => rooms.authenticate(host.room.id, host.seatId, host.seatToken)).not.toThrow();
+      now += 24 * 60 * 60 * 1_000;
+      expect(() => rooms.authenticate(host.room.id, host.seatId, host.seatToken)).toThrow(/expired/);
+      expect(JSON.stringify(host.room)).not.toContain('tokenExpiresAt');
+    } finally {
+      storage.close();
+    }
+  });
+
   it('persists action deadlines and applies a safe action after timeout', async () => {
     const storage = new ServerStorage(':memory:');
     let now = Date.parse('2026-07-31T00:00:00.000Z');

@@ -93,6 +93,7 @@ The client currently expects:
 - AI and human seats must submit only action IDs from the legal action enum.
 - Browser clients must never receive API keys, provider base URLs supplied by other clients, other players' private cards, fates, unrevealed plans, or unrevealed votes.
 - Commands must be idempotent by `commandId` once the server exists.
+- Seat tokens are stored only as hashes, carry a server-side expiry, and remain bound to identity across lobby reordering.
 - A persisted action deadline is revision-bound; chat, reconnect, and snapshot reads must not reset it.
 - Persisted state must record schema version and upstream commit.
 

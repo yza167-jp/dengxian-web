@@ -80,7 +80,7 @@ Room automation computes a legal heuristic decision first. External providers ma
 
 Verified behavior:
 
-- `npm test` passed 55 tests, including strict tool-call, tool-rejection → JSON-only transition, non-retryable 401, `Retry-After`, timeout, 429, illegal-action, no-key fallback, private-rationale isolation and non-exposure of `reasoning_content`.
+- `npm test` passed 56 tests, including strict tool-call, tool-rejection → JSON-only transition, non-retryable 401, `Retry-After`, timeout, 429, illegal-action, no-key fallback, private-rationale isolation and non-exposure of `reasoning_content`.
 - `npm run sim` passed 120 all-bot games across 4, 5, and 6 players.
 
 ## Live-call boundary

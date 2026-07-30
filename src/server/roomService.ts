@@ -16,6 +16,7 @@ export interface RoomSeat {
   temporaryBot: boolean;
   disconnectedAt?: string;
   tokenHash: string;
+  tokenExpiresAt?: string;
   ai?: AiSeatConfig;
   characterId?: CharacterId;
 }
@@ -115,15 +116,21 @@ export class RoomService {
   private readonly botQueues = new Map<string, Promise<RoomPayload>>();
   private readonly now: () => number;
   private readonly actionTimeoutMs: number;
+  private readonly sessionTokenTtlMs: number;
 
   constructor(
     private readonly storage: ServerStorage,
-    options: { now?: () => number; actionTimeoutMs?: number } = {},
+    options: { now?: () => number; actionTimeoutMs?: number; sessionTokenTtlDays?: number } = {},
   ) {
     this.now = options.now ?? Date.now;
     this.actionTimeoutMs = Math.max(
       1,
       options.actionTimeoutMs ?? Number(process.env.ACTION_TIMEOUT_MS ?? 90_000),
+    );
+    this.sessionTokenTtlMs = Math.max(
+      1,
+      (options.sessionTokenTtlDays ?? Number(process.env.SESSION_TOKEN_TTL_DAYS ?? 30))
+        * 24 * 60 * 60 * 1_000,
     );
     this.markPersistedHumansDisconnected();
   }
@@ -148,6 +155,7 @@ export class RoomService {
         connected: true,
         temporaryBot: false,
         tokenHash: sha256(token),
+        tokenExpiresAt: this.newTokenExpiry(),
         characterId: input.characterId,
       }],
       gameState: null,
@@ -185,6 +193,7 @@ export class RoomService {
       connected: true,
       temporaryBot: false,
       tokenHash: sha256(token),
+      tokenExpiresAt: this.newTokenExpiry(),
     });
     this.save(room, 'seat_joined', { seatId });
     return { room: toPublicRoom(room), seatId, seatToken: token };
@@ -194,6 +203,9 @@ export class RoomService {
     const room = this.getRoom(roomId);
     const seat = room.seats.find((candidate) => candidate.id === seatId);
     if (!seat || seat.tokenHash !== sha256(token)) throw new Error('Invalid seat token');
+    if (seat.tokenExpiresAt && Date.parse(seat.tokenExpiresAt) <= this.now()) {
+      throw new Error('Seat token expired');
+    }
     return { room, seat };
   }
 
@@ -539,6 +551,7 @@ export class RoomService {
         if (seat.kind !== 'human') continue;
         seat.connected = false;
         seat.disconnectedAt = disconnectedAt;
+        seat.tokenExpiresAt ??= this.newTokenExpiry();
         const player = room.gameState?.players.find((candidate) => candidate.id === seat.id);
         if (player) player.disconnected = true;
         humanSeatIds.push(seat.id);
@@ -568,6 +581,10 @@ export class RoomService {
       payload: room,
     });
     this.storage.appendEvent(room.id, eventType, eventPayload);
+  }
+
+  private newTokenExpiry(): string {
+    return new Date(this.now() + this.sessionTokenTtlMs).toISOString();
   }
 
   private async advanceBots(roomId: string): Promise<RoomPayload> {
