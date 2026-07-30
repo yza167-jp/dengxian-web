@@ -97,6 +97,15 @@ function toPublicRoom(room: RoomPayload): PublicRoom {
   };
 }
 
+function nextAvailableSeatId(room: RoomPayload): SeatId {
+  const occupied = new Set(room.seats.map((seat) => seat.id));
+  for (let index = 1; index <= room.maxSeats; index += 1) {
+    const seatId = `seat-${index}`;
+    if (!occupied.has(seatId)) return seatId;
+  }
+  throw new Error('Room is full');
+}
+
 export class RoomService {
   private readonly botQueues = new Map<string, Promise<RoomPayload>>();
 
@@ -149,7 +158,7 @@ export class RoomService {
     if (room.status !== 'lobby') throw new Error('Room already started');
     if (room.seats.length >= room.maxSeats) throw new Error('Room is full');
     const token = newToken();
-    const seatId = `seat-${room.seats.length + 1}`;
+    const seatId = nextAvailableSeatId(room);
     room.seats.push({
       id: seatId,
       name: input.name,
@@ -214,7 +223,7 @@ export class RoomService {
     this.assertHost(room, seat.id);
     if (room.status !== 'lobby') throw new Error('Cannot add bot after start');
     if (room.seats.length >= room.maxSeats) throw new Error('Room is full');
-    const botId = `seat-${room.seats.length + 1}`;
+    const botId = nextAvailableSeatId(room);
     room.seats.push({
       id: botId,
       name: input.name,
@@ -307,9 +316,15 @@ export class RoomService {
   }
 
   async applyCommand(input: { roomId: string; seatId: SeatId; seatToken: string; commandId: string; baseRevision: number; actionId: string }): Promise<RoomSnapshot> {
-    const existing = this.storage.getCommand(input.roomId, input.commandId);
-    if (existing) return existing as unknown as RoomSnapshot;
     const { room, seat } = this.authenticate(input.roomId, input.seatId, input.seatToken);
+    const existing = this.storage.getCommand(input.roomId, input.commandId);
+    if (existing) {
+      const matchesOriginalCommand = existing.seatId === seat.id
+        && existing.baseRevision === input.baseRevision
+        && existing.actionId === input.actionId;
+      if (!matchesOriginalCommand) throw new Error('Command id already used with different payload');
+      return existing.response as unknown as RoomSnapshot;
+    }
     if (!room.gameState) throw new Error('Game has not started');
     if (room.gameState.revision !== input.baseRevision) throw new Error('Stale baseRevision');
     const action = assertActionBelongsToLegalSet(room.gameState, seat.id, input.actionId);

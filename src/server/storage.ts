@@ -28,6 +28,13 @@ export interface StoredSave {
   updatedAt: string;
 }
 
+export interface StoredCommand {
+  seatId: string;
+  baseRevision: number;
+  actionId: string;
+  response: Record<string, unknown>;
+}
+
 interface RoomRow {
   id: string;
   code: string;
@@ -176,9 +183,23 @@ export class ServerStorage {
     return (this.db.prepare('SELECT id FROM rooms ORDER BY updated_at DESC').all() as unknown as IdRow[]).map((row) => this.getRoom(row.id)!);
   }
 
-  getCommand(roomId: string, commandId: string): Record<string, unknown> | null {
-    const row = this.db.prepare('SELECT response_json FROM commands WHERE room_id = ? AND command_id = ?').get(roomId, commandId) as { response_json: string } | undefined;
-    return row ? decode<Record<string, unknown>>(row.response_json) : null;
+  getCommand(roomId: string, commandId: string): StoredCommand | null {
+    const row = this.db.prepare(`
+      SELECT seat_id, base_revision, action_id, response_json
+      FROM commands
+      WHERE room_id = ? AND command_id = ?
+    `).get(roomId, commandId) as {
+      seat_id: string;
+      base_revision: number;
+      action_id: string;
+      response_json: string;
+    } | undefined;
+    return row ? {
+      seatId: row.seat_id,
+      baseRevision: row.base_revision,
+      actionId: row.action_id,
+      response: decode<Record<string, unknown>>(row.response_json),
+    } : null;
   }
 
   putCommand(input: { roomId: string; commandId: string; seatId: string; baseRevision: number; actionId: string; response: unknown }): void {

@@ -93,6 +93,56 @@ describe('server http contracts', () => {
     const second = await request(app.app).post('/api/rooms/command').send(command).expect(200);
     expect(second.body.stateHash).toBe(first.body.stateHash);
     expect(second.body.view.revision).toBe(first.body.view.revision);
+
+    const invalidToken = await request(app.app).post('/api/rooms/command').send({
+      ...command,
+      seatToken: 'x'.repeat(32),
+    }).expect(422);
+    expect(JSON.stringify(invalidToken.body)).not.toContain(actor.snapshot.view!.self!.fateId);
+    expect(invalidToken.body).not.toHaveProperty('view');
+
+    await request(app.app).post('/api/rooms/command').send({
+      ...command,
+      actionId: 'forged-action-id',
+    }).expect(422, { error: 'Command id already used with different payload' });
+  });
+
+  it('reuses vacant seat ids without creating duplicate players', async () => {
+    const created = await request(app.app).post('/api/rooms').send({ hostName: '甲', maxSeats: 4, seed: 77 }).expect(201);
+    const host = created.body as any;
+    const addBot = (name: string) => app.services.rooms.addBot({
+      roomId: host.room.id,
+      seatId: host.seatId,
+      seatToken: host.seatToken,
+      name,
+      ai: { provider: 'local-bot', difficulty: 'normal', persona: 'steady' },
+    });
+    addBot('乙');
+    addBot('丙');
+    addBot('丁');
+    app.services.rooms.removeBot({
+      roomId: host.room.id,
+      seatId: host.seatId,
+      seatToken: host.seatToken,
+      targetSeatId: 'seat-2',
+    });
+    const refilled = addBot('戊');
+    const ids = refilled.room.seats.map((seat: any) => seat.id);
+    expect(ids).toHaveLength(new Set(ids).size);
+    expect(ids).toContain('seat-2');
+
+    app.services.rooms.ready({
+      roomId: host.room.id,
+      seatId: host.seatId,
+      seatToken: host.seatToken,
+      ready: true,
+    });
+    const started = await app.services.rooms.start({
+      roomId: host.room.id,
+      seatId: host.seatId,
+      seatToken: host.seatToken,
+    });
+    expect(started.view?.players.map((player) => player.id).sort()).toEqual(['seat-1', 'seat-2', 'seat-3', 'seat-4']);
   });
 
   it('never serializes canonical room state or another seat private cards in public snapshots', async () => {
