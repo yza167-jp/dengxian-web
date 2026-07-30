@@ -32,6 +32,7 @@ export interface StoredCommand {
   seatId: string;
   baseRevision: number;
   actionId: string;
+  status: 'pending' | 'complete';
   response: Record<string, unknown>;
 }
 
@@ -118,6 +119,7 @@ export class ServerStorage {
         seat_id TEXT NOT NULL,
         base_revision INTEGER NOT NULL,
         action_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'complete',
         response_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
         PRIMARY KEY (room_id, command_id),
@@ -141,6 +143,11 @@ export class ServerStorage {
         updated_at TEXT NOT NULL
       );
     `);
+    const commandColumns = this.db.prepare('PRAGMA table_info(commands)').all() as unknown as Array<{ name: string }>;
+    if (!commandColumns.some((column) => column.name === 'status')) {
+      this.db.exec("ALTER TABLE commands ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'");
+    }
+    this.db.exec("INSERT OR IGNORE INTO migrations (id, applied_at) VALUES (2, datetime('now'))");
   }
 
   upsertRoom(input: { id: string; code: string; status: string; hostSeatId: string; payload: unknown }): StoredRoom {
@@ -185,28 +192,73 @@ export class ServerStorage {
 
   getCommand(roomId: string, commandId: string): StoredCommand | null {
     const row = this.db.prepare(`
-      SELECT seat_id, base_revision, action_id, response_json
+      SELECT seat_id, base_revision, action_id, status, response_json
       FROM commands
       WHERE room_id = ? AND command_id = ?
     `).get(roomId, commandId) as {
       seat_id: string;
       base_revision: number;
       action_id: string;
+      status: 'pending' | 'complete';
       response_json: string;
     } | undefined;
     return row ? {
       seatId: row.seat_id,
       baseRevision: row.base_revision,
       actionId: row.action_id,
+      status: row.status,
       response: decode<Record<string, unknown>>(row.response_json),
     } : null;
   }
 
   putCommand(input: { roomId: string; commandId: string; seatId: string; baseRevision: number; actionId: string; response: unknown }): void {
     this.db.prepare(`
-      INSERT OR IGNORE INTO commands (room_id, command_id, seat_id, base_revision, action_id, response_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO commands (room_id, command_id, seat_id, base_revision, action_id, status, response_json, created_at)
+      VALUES (?, ?, ?, ?, ?, 'complete', ?, ?)
     `).run(input.roomId, input.commandId, input.seatId, input.baseRevision, input.actionId, encode(input.response), now());
+  }
+
+  putPendingCommandWithRoom(input: {
+    room: { id: string; code: string; status: string; hostSeatId: string; payload: unknown };
+    commandId: string;
+    seatId: string;
+    baseRevision: number;
+    actionId: string;
+    eventType: string;
+    eventPayload: unknown;
+  }): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.upsertRoom(input.room);
+      this.appendEvent(input.room.id, input.eventType, input.eventPayload);
+      this.db.prepare(`
+        INSERT INTO commands (
+          room_id, command_id, seat_id, base_revision, action_id, status, response_json, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+      `).run(
+        input.room.id,
+        input.commandId,
+        input.seatId,
+        input.baseRevision,
+        input.actionId,
+        encode({ pending: true }),
+        now(),
+      );
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  completeCommand(roomId: string, commandId: string, response: unknown): void {
+    const result = this.db.prepare(`
+      UPDATE commands
+      SET status = 'complete', response_json = ?
+      WHERE room_id = ? AND command_id = ? AND status = 'pending'
+    `).run(encode(response), roomId, commandId);
+    if (result.changes !== 1) throw new Error('Pending command not found');
   }
 
   appendEvent(roomId: string, type: string, payload: unknown): void {

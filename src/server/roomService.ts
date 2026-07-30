@@ -375,7 +375,13 @@ export class RoomService {
         && existing.baseRevision === input.baseRevision
         && existing.actionId === input.actionId;
       if (!matchesOriginalCommand) throw new Error('Command id already used with different payload');
-      return existing.response as unknown as RoomSnapshot;
+      if (existing.status === 'complete') {
+        return existing.response as unknown as RoomSnapshot;
+      }
+      const advanced = await this.advanceBots(room.id);
+      const recovered = this.snapshot(advanced, seat.id);
+      this.storage.completeCommand(room.id, input.commandId, recovered);
+      return recovered;
     }
     if (!room.gameState) throw new Error('Game has not started');
     if (room.gameState.revision !== input.baseRevision) throw new Error('Stale baseRevision');
@@ -383,17 +389,29 @@ export class RoomService {
     room.gameState = applyAction(room.gameState, action);
     room.actionIds.push(action.id);
     if (room.gameState.outcome) room.status = 'finished';
-    this.save(room, 'command_applied', { seatId: seat.id, commandId: input.commandId, actionId: action.id, revision: room.gameState.revision });
-    const advanced = await this.advanceBots(room.id);
-    const response = this.snapshot(advanced, seat.id);
-    this.storage.putCommand({
-      roomId: room.id,
+    this.storage.putPendingCommandWithRoom({
+      room: {
+        id: room.id,
+        code: room.code,
+        status: room.status,
+        hostSeatId: room.hostSeatId,
+        payload: room,
+      },
       commandId: input.commandId,
       seatId: seat.id,
       baseRevision: input.baseRevision,
       actionId: action.id,
-      response,
+      eventType: 'command_applied',
+      eventPayload: {
+        seatId: seat.id,
+        commandId: input.commandId,
+        actionId: action.id,
+        revision: room.gameState.revision,
+      },
     });
+    const advanced = await this.advanceBots(room.id);
+    const response = this.snapshot(advanced, seat.id);
+    this.storage.completeCommand(room.id, input.commandId, response);
     return response;
   }
 

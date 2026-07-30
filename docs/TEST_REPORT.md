@@ -9,7 +9,7 @@
 | `npm audit` | Last successful lock check: Pass | 0 vulnerabilities；本轮重试被 npm registry TLS 中断，依赖与 lockfile 未变化 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 5 files，56 tests |
+| `npm test` | Pass | 5 files，57 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
@@ -48,6 +48,7 @@ Playwright 覆盖：
 - Socket.IO 为每个已认证座位生成独立脱敏快照。
 - 命令按 `commandId` 幂等并校验 `baseRevision` 与合法动作 ID。
 - 命令缓存只在席位认证后读取，且绑定原始 seat/revision/action；伪造 token 或复用 ID 改载荷不能取得缓存私密快照。
+- 人类动作后的房间迁移与 `pending` 命令记录在同一 SQLite 事务提交；模拟在最终响应缓存前崩溃后，以同一 `commandId` 重试不会重复应用动作。
 - 在线存档只允许房主按本房间列出、创建、覆盖和删除，API 只返回元数据；权威房间快照不会作为下载内容公开。
 - SQLite 文件关闭并重新打开后，进行中的房间、修订号和原座位令牌可恢复；服务重启先把真人标记离线，凭 token 重连后才恢复在线。
 - 断线宽限后房主可让本地 Bot 临时接管；原会话令牌重连时恢复真人控制。

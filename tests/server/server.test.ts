@@ -4,7 +4,7 @@ import { io as clientIo, type Socket } from 'socket.io-client';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { publicBotMessage } from '../../src/shared/game/bot';
 import { createApp } from '../../src/server/index';
 import { RoomService } from '../../src/server/roomService';
@@ -115,6 +115,34 @@ describe('server http contracts', () => {
       ...command,
       actionId: 'forged-action-id',
     }).expect(422, { error: 'Command id already used with different payload' });
+  });
+
+  it('recovers a pending command without applying its action twice', async () => {
+    const { host, actor } = await createStartedRoom();
+    const action = actor.snapshot.view!.legalActions[0]!;
+    const command = {
+      roomId: host.room.id,
+      seatId: actor.seatId,
+      seatToken: actor.seatToken,
+      commandId: 'cmd-pending-recovery',
+      baseRevision: actor.snapshot.view!.revision,
+      actionId: action.id,
+    };
+    const complete = vi
+      .spyOn(app.services.storage, 'completeCommand')
+      .mockImplementationOnce(() => {
+        throw new Error('simulated crash before command completion');
+      });
+
+    await expect(app.services.rooms.applyCommand(command)).rejects.toThrow(/simulated crash/);
+    const revisionAfterCrash = app.services.rooms.getRoom(host.room.id).gameState!.revision;
+    expect(app.services.storage.getCommand(host.room.id, command.commandId)?.status).toBe('pending');
+
+    const recovered = await app.services.rooms.applyCommand(command);
+
+    expect(recovered.view!.revision).toBe(revisionAfterCrash);
+    expect(app.services.storage.getCommand(host.room.id, command.commandId)?.status).toBe('complete');
+    expect(complete).toHaveBeenCalledTimes(2);
   });
 
   it('expires seat tokens at the configured server-side TTL', () => {
