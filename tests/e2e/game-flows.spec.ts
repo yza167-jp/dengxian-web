@@ -203,6 +203,9 @@ test.describe('online play', () => {
       await guest.getByLabel('显示名').fill('客席-301');
       await guest.getByRole('button', { name: '凭座位令牌加入' }).click();
       await expect(guest.getByLabel('房间席位')).toContainText(code);
+      await host.locator('.seat-list article', { hasText: '客席-301' }).getByRole('button', { name: '与我换座' }).click();
+      await expect(host.locator('.seat-list article').first()).toContainText('客席-301');
+      await expect(guest.locator('.seat-list article').first()).toContainText('客席-301');
       await addBotsAndStart(host, guest);
       await expect(host.getByText(/剩余 \d+ 秒/)).toBeVisible();
       await advanceSharedRound(host, guest);

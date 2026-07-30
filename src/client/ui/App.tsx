@@ -420,6 +420,7 @@ function OnlineLobby() {
   const startOnline = useGameStore((state) => state.startOnline);
   const addBot = useGameStore((state) => state.addBot);
   const removeBot = useGameStore((state) => state.removeBot);
+  const swapSeat = useGameStore((state) => state.swapSeat);
   const transferHost = useGameStore((state) => state.transferHost);
   const takeOverDisconnected = useGameStore((state) => state.takeOverDisconnected);
   const [roomId, setRoomId] = useState(() => new URLSearchParams(window.location.search).get('code') ?? '');
@@ -476,11 +477,12 @@ function OnlineLobby() {
         <section className="lobby-board" aria-label="房间席位">
           <div className="info-strip">房间码 {room.code} · 分享链接 {shareLink}</div>
           <div className="seat-list">
-            {room.seats.map((seat) => (
+            {room.seats.map((seat, index) => (
               <article key={seat.id} className={seat.id === session?.seatId ? 'active' : ''}>
                 <strong>{seat.name}</strong>
-                <span>{seat.kind === 'bot' ? 'AI' : '真人'} · {seat.ready ? '已准备' : '未准备'} · {seat.connected ? '在线' : '离线'}</span>
+                <span>第 {index + 1} 席 · {seat.kind === 'bot' ? 'AI' : '真人'} · {seat.ready ? '已准备' : '未准备'} · {seat.connected ? '在线' : '离线'}</span>
                 {seat.id === room.hostSeatId ? <small>房主</small> : null}
+                {isHost && seat.id !== session?.seatId ? <button type="button" onClick={() => void swapSeat(seat.id)}>与我换座</button> : null}
                 {isHost && seat.kind === 'bot' ? <button type="button" onClick={() => void removeBot(seat.id)}>移除 AI</button> : null}
                 {isHost && seat.kind === 'human' && seat.id !== session?.seatId ? <button type="button" onClick={() => void transferHost(seat.id)}>移交房主</button> : null}
                 {isHost && seat.kind === 'human' && !seat.connected ? <button type="button" onClick={() => void takeOverDisconnected(seat.id)}>Bot 临时接管</button> : null}

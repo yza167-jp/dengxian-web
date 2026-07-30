@@ -9,7 +9,7 @@
 | `npm audit` | Last successful lock check: Pass | 0 vulnerabilities；本轮重试被 npm registry TLS 中断，依赖与 lockfile 未变化 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 5 files，54 tests |
+| `npm test` | Pass | 5 files，55 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
@@ -51,6 +51,7 @@ Playwright 覆盖：
 - 在线存档只允许房主按本房间列出、创建、覆盖和删除，API 只返回元数据；权威房间快照不会作为下载内容公开。
 - SQLite 文件关闭并重新打开后，进行中的房间、修订号和原座位令牌可恢复；服务重启先把真人标记离线，凭 token 重连后才恢复在线。
 - 断线宽限后房主可让本地 Bot 临时接管；原会话令牌重连时恢复真人控制。
+- 房主可在开局前交换自己与目标席位的顺序；双方身份令牌与房主权限保持绑定，不随视觉位置互换。
 - 在线动作截止时间与修订号一同持久化；超时会执行合法的安全默认动作、写入事件与动作账本，并为下一待决状态生成新截止时间。
 - DeepSeek 严格 tool call、工具拒绝后的 JSON-only 请求、超时、HTTP 429/`Retry-After`、非重试 401、非法 actionId 和无 Key 场景均受 mock 测试覆盖；失败自动回退，模型自由文本不会进入公共聊天。
 

@@ -93,7 +93,7 @@ docker compose up --build
 npm run verify
 ```
 
-该命令依次执行上游同步、依赖审计、类型检查、lint、54 项 Vitest、120 局 4/5/6 人模拟、生产构建和 16 项 Playwright E2E。Playwright 默认在独立的 `8797` 端口启动生产服务，避免与 `npm run dev` 使用的 `8787` API 服务冲突；可通过 `E2E_PORT` 覆盖。也可单独运行：
+该命令依次执行上游同步、依赖审计、类型检查、lint、55 项 Vitest、120 局 4/5/6 人模拟、生产构建和 16 项 Playwright E2E。Playwright 默认在独立的 `8797` 端口启动生产服务，避免与 `npm run dev` 使用的 `8787` API 服务冲突；可通过 `E2E_PORT` 覆盖。也可单独运行：
 
 ```bash
 npm run typecheck

@@ -20,6 +20,7 @@ import {
   saveCreateSchema,
   saveUpdateSchema,
   startRoomSchema,
+  swapSeatSchema,
   takeoverBotSchema,
   tokenSeatSchema,
   transferHostSchema,
@@ -109,6 +110,11 @@ function wireSocket(io: SocketServer, rooms: RoomService): (roomId: string) => v
     });
     handle('room:host-transfer', (payload) => {
       const result = rooms.transferHost(transferHostSchema.parse(payload));
+      broadcastSnapshots(result.room.id);
+      return result;
+    });
+    handle('room:swap-seat', (payload) => {
+      const result = rooms.swapSeats(swapSeatSchema.parse(payload));
       broadcastSnapshots(result.room.id);
       return result;
     });

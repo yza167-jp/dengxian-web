@@ -209,6 +209,31 @@ describe('server http contracts', () => {
     expect(started.view?.players.find((player) => player.id === host.seatId)?.characterId).toBe('R07');
   });
 
+  it('lets the host swap lobby order without invalidating either seat token', () => {
+    const host = app.services.rooms.createRoom({ hostName: '甲', maxSeats: 4, seed: 78 });
+    const guest = app.services.rooms.join({ roomId: host.room.id, name: '乙' });
+
+    const swapped = app.services.rooms.swapSeats({
+      roomId: host.room.id,
+      seatId: host.seatId,
+      seatToken: host.seatToken,
+      targetSeatId: guest.seatId,
+    });
+
+    expect(swapped.room.seats.map((seat) => seat.name)).toEqual(['乙', '甲']);
+    expect(app.services.rooms.reconnect({
+      roomId: host.room.id,
+      seatId: guest.seatId,
+      seatToken: guest.seatToken,
+    }).room.seats[0]?.name).toBe('乙');
+    expect(() => app.services.rooms.swapSeats({
+      roomId: host.room.id,
+      seatId: guest.seatId,
+      seatToken: guest.seatToken,
+      targetSeatId: host.seatId,
+    })).toThrow(/Host permission/);
+  });
+
   it('never serializes canonical room state or another seat private cards in public snapshots', async () => {
     const { host, seats } = await createStartedRoom();
     const fullRoom = app.services.rooms.getRoom(host.room.id);

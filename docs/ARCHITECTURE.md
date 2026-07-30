@@ -84,7 +84,7 @@ The client currently expects:
 | `POST /api/saves` | Host-authenticated online checkpoint |
 | `PUT /api/saves/:id` | Overwrite a checkpoint in the same room |
 | `DELETE /api/saves/:id` | Delete a checkpoint in the same room |
-| Socket.IO `room:*` | Create/join/reconnect/ready/start/command/host/bot lifecycle acknowledgements |
+| Socket.IO `room:*` | Create/join/reconnect/ready/start/command/seat-order/host/bot lifecycle acknowledgements |
 | Socket.IO `chat:send` / `chat:message` | Send and broadcast public chat |
 
 ## Invariants

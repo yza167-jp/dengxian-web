@@ -277,6 +277,27 @@ export class RoomService {
     return this.snapshot(room, seat.id);
   }
 
+  swapSeats(input: { roomId: string; seatId: SeatId; seatToken: string; targetSeatId: SeatId }) {
+    const { room, seat } = this.authenticate(input.roomId, input.seatId, input.seatToken);
+    this.assertHost(room, seat.id);
+    if (room.status !== 'lobby') throw new Error('Cannot swap seats after start');
+    if (seat.id === input.targetSeatId) throw new Error('Choose another seat to swap');
+    const hostIndex = room.seats.findIndex((candidate) => candidate.id === seat.id);
+    const targetIndex = room.seats.findIndex((candidate) => candidate.id === input.targetSeatId);
+    if (hostIndex < 0 || targetIndex < 0) throw new Error('Target seat not found');
+    [room.seats[hostIndex], room.seats[targetIndex]] = [
+      room.seats[targetIndex]!,
+      room.seats[hostIndex]!,
+    ];
+    this.save(room, 'seats_swapped', {
+      firstSeatId: seat.id,
+      secondSeatId: input.targetSeatId,
+      firstPosition: targetIndex,
+      secondPosition: hostIndex,
+    });
+    return this.snapshot(room, seat.id);
+  }
+
   async takeOverDisconnected(input: {
     roomId: string;
     seatId: SeatId;

@@ -70,6 +70,7 @@ interface GameStore {
   startOnline: () => Promise<boolean>;
   addBot: (ai: AiSeatConfig) => Promise<void>;
   removeBot: (seatId: SeatId) => Promise<void>;
+  swapSeat: (seatId: SeatId) => Promise<void>;
   transferHost: (seatId: SeatId) => Promise<void>;
   takeOverDisconnected: (seatId: SeatId) => Promise<void>;
   submitAction: (actionId: string) => Promise<void>;
@@ -541,6 +542,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     const snapshot = await attempt(set, '移除 AI 失败。', () =>
       emitRoomSnapshot(socket, 'room:remove-bot', session, { targetSeatId: seatId }));
+    if (snapshot) applySnapshot(snapshot, set);
+  },
+
+  swapSeat: async (seatId) => {
+    const { session, socket } = get();
+    if (!session || !socket) {
+      set({ error: '在线连接尚未建立。' });
+      return;
+    }
+    const snapshot = await attempt(set, '换座失败。', () =>
+      emitRoomSnapshot(socket, 'room:swap-seat', session, { targetSeatId: seatId }));
     if (snapshot) applySnapshot(snapshot, set);
   },
 

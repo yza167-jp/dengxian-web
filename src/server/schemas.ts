@@ -49,6 +49,10 @@ export const transferHostSchema = tokenSeatSchema.extend({
   targetSeatId: z.string().trim().min(1),
 });
 
+export const swapSeatSchema = tokenSeatSchema.extend({
+  targetSeatId: z.string().trim().min(1),
+});
+
 export const addBotSchema = tokenSeatSchema.extend({
   name: z.string().trim().min(1).max(40).default('AI 修士'),
   ai: aiSeatConfigSchema.default({ provider: 'local-bot', difficulty: 'normal', persona: 'steady' }),
