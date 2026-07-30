@@ -13,7 +13,7 @@
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
-| `npm run test:e2e` | Pass | Chromium 14/14 |
+| `npm run test:e2e` | Pass | Chromium 15/15；独立生产测试端口 8797 |
 | `npm run verify` | Pass | 上述门按发布顺序全绿 |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
 | `docker build` | Not run | Docker CLI 可用但本机 daemon 未启动 |
@@ -31,10 +31,11 @@ Playwright 覆盖：
 5. 本地单人开局并推进至少一整轮。
 6. 一局完整本地 Bot 对局并显示合法终局结算。
 7. 最近单人局续玩。
-8. 命名存档、导出、删除、导入、覆盖与载入。
-9. 两个独立浏览器上下文创建/加入同一房间，加入两个 Bot，双方准备、开局并推进一整轮；访客刷新后凭会话令牌回到原座位。
-10. 教程与未结局状态下的结局路由。
-11. 1024×768、1280×720、1440×900、1920×1080 四档截图。
+8. 对局记录与公开会话使用可关闭的两侧抽屉，关闭后不会继续遮挡桌面。
+9. 命名存档、导出、删除、导入、覆盖与载入。
+10. 两个独立浏览器上下文创建/加入同一房间，加入两个 Bot，双方准备、开局并推进一整轮；访客刷新后凭会话令牌回到原座位。
+11. 教程与未结局状态下的结局路由。
+12. 1024×768、1280×720、1440×900、1920×1080 四档截图。
 
 截图位于 `docs/screenshots/`。常规 release 截图为 `menu-1024x768.png`、`tutorial-1280x720.png`、`table-1440x900.png`、`saves-1920x1080.png`；本轮额外保留 `art-v2-*.png` 作为美术优化目检证据。视觉复核确认页面非空、正文可读、主导航与核心动作可见，且人物头像、行动卡、规则图和中央仙台背景均已加载。
 

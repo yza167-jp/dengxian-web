@@ -63,12 +63,10 @@ async function advanceUntilRoundTwo(page: Page): Promise<void> {
 async function advanceToOutcome(page: Page): Promise<void> {
   for (let step = 0; step < 600; step += 1) {
     if (page.url().endsWith('/outcome')) return;
-    const button = page.getByLabel('合法动作').getByRole('button').first();
-    if ((await button.count()) === 0) {
+    const acted = await clickPreferredAction(page);
+    if (!acted) {
       await page.waitForTimeout(20);
-      continue;
     }
-    await button.click();
   }
   await expect(page).toHaveURL(/\/outcome$/);
 }
