@@ -48,7 +48,8 @@ The production build emits `dist/server/index.js`; `npm start` serves the API, S
 5. `getLegalActions(state, seatId)` returns fully instantiated legal action IDs.
 6. `applyAction(state, action)` rejects stale/fabricated action IDs and appends public events.
 7. `getViewForSeat(state, seatId)` hides other seats' hands, fates, unrevealed plans, and unrevealed votes.
-8. `chooseHeuristicAction(state, view, seatId)` chooses one legal action for local bots and simulations.
+8. `chooseHeuristicAction(state, view, seatId)` chooses one legal action for local bots, simulations, and server-side timeout fallback.
+9. Active online rooms persist `actionDeadlineAt` with the authoritative revision. A server sweep applies one safe legal action for each timed-out human decision, records it in the action ledger and SQLite event stream, advances bots, and broadcasts a new seat-redacted snapshot.
 
 ## Client Screens
 
@@ -92,6 +93,7 @@ The client currently expects:
 - AI and human seats must submit only action IDs from the legal action enum.
 - Browser clients must never receive API keys, provider base URLs supplied by other clients, other players' private cards, fates, unrevealed plans, or unrevealed votes.
 - Commands must be idempotent by `commandId` once the server exists.
+- A persisted action deadline is revision-bound; chat, reconnect, and snapshot reads must not reset it.
 - Persisted state must record schema version and upstream commit.
 
 ## Release Evidence

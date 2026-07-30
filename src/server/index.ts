@@ -144,15 +144,43 @@ function wireSocket(io: SocketServer, rooms: RoomService): (roomId: string) => v
   return broadcastSnapshots;
 }
 
-export function createApp(options: { storage?: ServerStorage } = {}) {
+export function createApp(options: {
+  storage?: ServerStorage;
+  now?: () => number;
+  actionTimeoutMs?: number;
+  timeoutSweepMs?: number;
+} = {}) {
   const storage = options.storage ?? new ServerStorage();
-  const rooms = new RoomService(storage);
+  const rooms = new RoomService(storage, {
+    now: options.now,
+    actionTimeoutMs: options.actionTimeoutMs,
+  });
   const app = express();
   const server = createServer(app);
   const io = new SocketServer(server, {
     cors: process.env.NODE_ENV === 'production' ? undefined : { origin: true },
   });
   const broadcastSnapshots = wireSocket(io, rooms);
+  let timeoutSweep: ReturnType<typeof setInterval> | null = null;
+  let timeoutSweepRunning = false;
+  server.on('listening', () => {
+    timeoutSweep = setInterval(() => {
+      if (timeoutSweepRunning) return;
+      timeoutSweepRunning = true;
+      void rooms.expireTimedOutRooms()
+        .then((roomIds) => {
+          for (const roomId of roomIds) broadcastSnapshots(roomId);
+        })
+        .finally(() => {
+          timeoutSweepRunning = false;
+        });
+    }, Math.max(100, options.timeoutSweepMs ?? 1_000));
+    timeoutSweep.unref();
+  });
+  server.on('close', () => {
+    if (timeoutSweep) clearInterval(timeoutSweep);
+    timeoutSweep = null;
+  });
 
   app.use(helmet({
     contentSecurityPolicy: false,

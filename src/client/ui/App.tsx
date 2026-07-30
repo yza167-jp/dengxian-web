@@ -562,6 +562,7 @@ function GameTable() {
   const activePanel = useGameStore((state) => state.activePanel);
   const setActivePanel = useGameStore((state) => state.setActivePanel);
   const chat = useGameStore((state) => state.chat);
+  const actionDeadlineAt = useGameStore((state) => state.room?.actionDeadlineAt);
   const [drawerOpen, setDrawerOpen] = useState(false);
   useEffect(() => {
     if (view?.outcome) navigate('/outcome');
@@ -589,7 +590,7 @@ function GameTable() {
       style={artVariable('--table-art', ALTAR_ART)}
     >
       <section className="ritual-stage" aria-label="环坛对局">
-        <CenterAltar view={view} />
+        <CenterAltar view={view} actionDeadlineAt={actionDeadlineAt} />
         <Scoreboard view={view} />
       </section>
       <section className="decision-sheet" aria-label="本轮决策">
@@ -702,9 +703,18 @@ function PlayerToken({ player, active, position }: { player: PublicPlayerView; a
   );
 }
 
-function CenterAltar({ view }: { view: GameView }) {
+function CenterAltar({ view, actionDeadlineAt }: { view: GameView; actionDeadlineAt?: string }) {
   const calamity = CALAMITY_BY_ID.get(view.currentCalamity);
   const seatDone = view.platform.seatProgress.filter((value, index) => value >= (view.platform.seatRequirements[index] ?? Infinity)).length;
+  const [countdownNow, setCountdownNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!actionDeadlineAt) return undefined;
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [actionDeadlineAt]);
+  const secondsRemaining = actionDeadlineAt
+    ? Math.max(0, Math.ceil((Date.parse(actionDeadlineAt) - countdownNow) / 1_000))
+    : null;
   return (
     <section className="altar" aria-label="中央玄坛">
       <div
@@ -713,7 +723,14 @@ function CenterAltar({ view }: { view: GameView }) {
       >
         <span>第 {view.round} 轮</span>
         <strong>{view.phaseLabel}</strong>
-        <small>修订 {view.revision}</small>
+        <small>
+          {secondsRemaining === null
+            ? '离线无时限'
+            : secondsRemaining > 0
+              ? `剩余 ${secondsRemaining} 秒`
+              : '等待自动处理'}
+          {' · '}修订 {view.revision}
+        </small>
       </div>
       <div className="altar-board">
         <article

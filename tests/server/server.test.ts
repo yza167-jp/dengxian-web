@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { publicBotMessage } from '../../src/shared/game/bot';
 import { createApp } from '../../src/server/index';
+import { RoomService } from '../../src/server/roomService';
 import { ServerStorage } from '../../src/server/storage';
 
 let app: ReturnType<typeof createApp>;
@@ -114,6 +115,54 @@ describe('server http contracts', () => {
       ...command,
       actionId: 'forged-action-id',
     }).expect(422, { error: 'Command id already used with different payload' });
+  });
+
+  it('persists action deadlines and applies a safe action after timeout', async () => {
+    const storage = new ServerStorage(':memory:');
+    let now = Date.parse('2026-07-31T00:00:00.000Z');
+    const rooms = new RoomService(storage, {
+      now: () => now,
+      actionTimeoutMs: 1_000,
+    });
+    try {
+      const host = rooms.createRoom({ hostName: '甲', maxSeats: 4, seed: 404 });
+      const seats = [
+        host,
+        rooms.join({ roomId: host.room.id, name: '乙' }),
+        rooms.join({ roomId: host.room.id, name: '丙' }),
+        rooms.join({ roomId: host.room.id, name: '丁' }),
+      ];
+      for (const seat of seats) {
+        rooms.ready({
+          roomId: host.room.id,
+          seatId: seat.seatId,
+          seatToken: seat.seatToken,
+          ready: true,
+        });
+      }
+      const started = await rooms.start({
+        roomId: host.room.id,
+        seatId: host.seatId,
+        seatToken: host.seatToken,
+      });
+      const startingRevision = started.view!.revision;
+      expect(started.room.actionDeadlineAt).toBe(new Date(now + 1_000).toISOString());
+
+      now += 1_001;
+      await expect(rooms.expireTimedOutRooms()).resolves.toEqual([host.room.id]);
+
+      const after = rooms.getRoom(host.room.id);
+      expect(after.gameState!.revision).toBeGreaterThan(startingRevision);
+      expect(after.actionDeadlineRevision).toBe(after.gameState!.revision);
+      expect(Date.parse(after.actionDeadlineAt!)).toBeGreaterThan(now);
+      expect(after.chat.at(-1)).toMatchObject({
+        seatId: 'system',
+        name: '系统',
+      });
+      expect(storage.listEvents(host.room.id).some((event) => event.type === 'action_timeout_applied')).toBe(true);
+    } finally {
+      storage.close();
+    }
   });
 
   it('reuses vacant seat ids without creating duplicate players', async () => {

@@ -33,6 +33,8 @@ export interface RoomPayload {
   initialConfig: CreateGameConfig | null;
   actionIds: string[];
   chat: Array<{ id: string; seatId: SeatId; name: string; message: string; createdAt: string; round?: number }>;
+  actionDeadlineAt?: string;
+  actionDeadlineRevision?: number;
 }
 
 export interface SeatAuth {
@@ -66,6 +68,7 @@ export interface PublicRoom {
   maxSeats: number;
   seats: PublicSeat[];
   chat: RoomPayload['chat'];
+  actionDeadlineAt?: string;
 }
 
 function codeFromId(id: string): string {
@@ -95,6 +98,7 @@ function toPublicRoom(room: RoomPayload): PublicRoom {
     maxSeats: room.maxSeats,
     seats: room.seats.map(publicSeat),
     chat: room.chat,
+    actionDeadlineAt: room.actionDeadlineAt,
   };
 }
 
@@ -109,8 +113,18 @@ function nextAvailableSeatId(room: RoomPayload): SeatId {
 
 export class RoomService {
   private readonly botQueues = new Map<string, Promise<RoomPayload>>();
+  private readonly now: () => number;
+  private readonly actionTimeoutMs: number;
 
-  constructor(private readonly storage: ServerStorage) {
+  constructor(
+    private readonly storage: ServerStorage,
+    options: { now?: () => number; actionTimeoutMs?: number } = {},
+  ) {
+    this.now = options.now ?? Date.now;
+    this.actionTimeoutMs = Math.max(
+      1,
+      options.actionTimeoutMs ?? Number(process.env.ACTION_TIMEOUT_MS ?? 90_000),
+    );
     this.markPersistedHumansDisconnected();
   }
 
@@ -350,6 +364,73 @@ export class RoomService {
     return response;
   }
 
+  async expireTimedOutRooms(): Promise<string[]> {
+    const changedRoomIds: string[] = [];
+    for (const stored of this.storage.listRooms()) {
+      let room = stored.payload as RoomPayload;
+      const state = room.gameState;
+      if (
+        room.status !== 'active' ||
+        !state ||
+        state.outcome ||
+        !room.actionDeadlineAt ||
+        Date.parse(room.actionDeadlineAt) > this.now()
+      ) {
+        continue;
+      }
+      if (room.actionDeadlineRevision !== state.revision) {
+        if (this.syncActionDeadline(room)) {
+          this.save(room, 'action_deadline_refreshed', { revision: state.revision });
+          changedRoomIds.push(room.id);
+        }
+        continue;
+      }
+
+      const timedOutSeatIds = room.seats
+        .filter((seat) => seat.kind === 'human' && getLegalActions(state, seat.id).length > 0)
+        .map((seat) => seat.id);
+      delete room.actionDeadlineAt;
+      delete room.actionDeadlineRevision;
+      const applied: Array<{ seatId: SeatId; actionId: string; revision: number }> = [];
+      for (const seatId of timedOutSeatIds) {
+        if (!room.gameState || room.gameState.outcome) break;
+        const legalActions = getLegalActions(room.gameState, seatId);
+        if (legalActions.length === 0) continue;
+        const view = getViewForSeat(room.gameState, seatId);
+        const action = chooseHeuristicAction(room.gameState, view, seatId).action;
+        room.gameState = applyAction(room.gameState, action);
+        room.actionIds.push(action.id);
+        applied.push({ seatId, actionId: action.id, revision: room.gameState.revision });
+        const seat = room.seats.find((candidate) => candidate.id === seatId);
+        room.chat.push({
+          id: newId('chat'),
+          seatId: 'system',
+          name: '系统',
+          message: `${seat?.name ?? seatId} 未在时限内响应，已自动执行安全默认动作。`,
+          createdAt: new Date(this.now()).toISOString(),
+          round: room.gameState.round,
+        });
+      }
+      room.chat = room.chat.slice(-100);
+      if (room.gameState?.outcome) room.status = 'finished';
+      if (applied.length > 0) {
+        this.save(room, 'action_timeout_applied', {
+          deadlineRevision: state.revision,
+          actions: applied,
+        });
+        room = await this.advanceBots(room.id);
+        changedRoomIds.push(room.id);
+      } else if (this.syncActionDeadline(room)) {
+        this.save(room, 'action_deadline_refreshed', {
+          revision: room.gameState?.revision,
+          reason: 'no_eligible_human_action',
+        });
+        changedRoomIds.push(room.id);
+      }
+    }
+    return changedRoomIds;
+  }
+
   chat(input: { roomId: string; seatId: SeatId; seatToken: string; message: string }) {
     const { room, seat } = this.authenticate(input.roomId, input.seatId, input.seatToken);
     const now = Date.now();
@@ -429,7 +510,7 @@ export class RoomService {
   }
 
   private markPersistedHumansDisconnected(): void {
-    const disconnectedAt = new Date().toISOString();
+    const disconnectedAt = new Date(this.now()).toISOString();
     for (const stored of this.storage.listRooms()) {
       const room = stored.payload as RoomPayload;
       const humanSeatIds: SeatId[] = [];
@@ -441,7 +522,8 @@ export class RoomService {
         if (player) player.disconnected = true;
         humanSeatIds.push(seat.id);
       }
-      if (humanSeatIds.length === 0) continue;
+      const deadlineChanged = this.syncActionDeadline(room);
+      if (humanSeatIds.length === 0 && !deadlineChanged) continue;
       this.storage.upsertRoom({
         id: room.id,
         code: room.code,
@@ -449,7 +531,10 @@ export class RoomService {
         hostSeatId: room.hostSeatId,
         payload: room,
       });
-      this.storage.appendEvent(room.id, 'server_restart_disconnected', { seatIds: humanSeatIds });
+      this.storage.appendEvent(room.id, 'server_restart_disconnected', {
+        seatIds: humanSeatIds,
+        actionDeadlineAt: room.actionDeadlineAt,
+      });
     }
   }
 
@@ -469,11 +554,45 @@ export class RoomService {
     const queued = previous
       .catch(() => this.getRoom(roomId))
       .then(() => this.runBotLoop(roomId))
+      .then((room) => {
+        if (this.syncActionDeadline(room)) {
+          this.save(room, 'action_deadline_updated', {
+            revision: room.gameState?.revision,
+            actionDeadlineAt: room.actionDeadlineAt,
+          });
+        }
+        return room;
+      })
       .finally(() => {
         if (this.botQueues.get(roomId) === queued) this.botQueues.delete(roomId);
       });
     this.botQueues.set(roomId, queued);
     return queued;
+  }
+
+  private syncActionDeadline(room: RoomPayload): boolean {
+    const state = room.gameState;
+    const hasPendingHumanAction = room.status === 'active'
+      && state !== null
+      && !state.outcome
+      && room.seats.some(
+        (seat) => seat.kind === 'human' && getLegalActions(state, seat.id).length > 0,
+      );
+    if (!hasPendingHumanAction) {
+      const changed = room.actionDeadlineAt !== undefined || room.actionDeadlineRevision !== undefined;
+      delete room.actionDeadlineAt;
+      delete room.actionDeadlineRevision;
+      return changed;
+    }
+    if (
+      room.actionDeadlineRevision === state.revision &&
+      room.actionDeadlineAt !== undefined
+    ) {
+      return false;
+    }
+    room.actionDeadlineRevision = state.revision;
+    room.actionDeadlineAt = new Date(this.now() + this.actionTimeoutMs).toISOString();
+    return true;
   }
 
   private async runBotLoop(roomId: string): Promise<RoomPayload> {

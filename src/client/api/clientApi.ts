@@ -31,6 +31,7 @@ export interface PublicRoom {
   maxSeats: number;
   seats: RoomSeatView[];
   chat: ServerChatMessage[];
+  actionDeadlineAt?: string;
 }
 
 export interface RoomSnapshot {

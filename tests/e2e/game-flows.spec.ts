@@ -204,6 +204,7 @@ test.describe('online play', () => {
       await guest.getByRole('button', { name: '凭座位令牌加入' }).click();
       await expect(guest.getByLabel('房间席位')).toContainText(code);
       await addBotsAndStart(host, guest);
+      await expect(host.getByText(/剩余 \d+ 秒/)).toBeVisible();
       await advanceSharedRound(host, guest);
       await expect(guest.getByLabel('游戏桌面')).toBeVisible();
       await guest.reload();
