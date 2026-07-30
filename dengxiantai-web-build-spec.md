@@ -1,4 +1,8 @@
-# 《登仙台》网页版 —— Coding Agent 构建规格（一次成型版）
+# Legacy / 已被 V2 产品规格取代
+
+> 本文件仅保留为历史设计记录。其“仅一名真人”“客户端权威”“无数据库/联机/存档”与“M0 后停下”等约束均已失效。当前唯一权威产品范围见 [`docs/PRODUCT_SPEC_V2.md`](docs/PRODUCT_SPEC_V2.md)。
+
+# 《登仙台》网页版 —— Coding Agent 构建规格（历史版本）
 
 > 目标：把 GitHub 仓库 `https://github.com/XLT-6/mofa-dengxiantai` 里的桌游，做成**在电脑浏览器里游玩**的单机网页版。**只有一名真人玩家（本机使用者）**，其余座位由 **DeepSeek 或任意 OpenAI 兼容大模型 API** 驱动。本文件是给 coding agent 通读、并据此从零开发到可运行成品的唯一权威文档。
 >
@@ -362,4 +366,3 @@ PORT=8787
 - [ ] 无 key 时 `local-bot` 模式可玩可测
 - [ ] key 不出现在任何前端代码 / 浏览器请求
 - [ ] README 覆盖安装、运行、配置 key、离线模式、常见问题
-
