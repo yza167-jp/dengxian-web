@@ -5,6 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { publicBotMessage } from '../../src/shared/game/bot';
 import { createApp } from '../../src/server/index';
 import { ServerStorage } from '../../src/server/storage';
 
@@ -254,6 +255,11 @@ describe('server http contracts', () => {
       first = null;
 
       second = createApp({ storage: new ServerStorage(database) });
+      const beforeReconnect = second.services.rooms.getRoom(created.room.id);
+      const persistedHost = beforeReconnect.seats.find((seat) => seat.id === created.seatId)!;
+      expect(persistedHost.connected).toBe(false);
+      expect(persistedHost.disconnectedAt).toBeTruthy();
+      expect(beforeReconnect.gameState?.players.find((player) => player.id === created.seatId)?.disconnected).toBe(true);
       const restored = second.services.rooms.reconnect({
         roomId: created.room.id,
         seatId: created.seatId,
@@ -268,6 +274,25 @@ describe('server http contracts', () => {
       if (second) second.services.storage.close();
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it('keeps private bot decisions out of public chat messages', () => {
+    expect(publicBotMessage({
+      id: 'secret-plan',
+      seatId: 'seat-2',
+      type: 'SUBMIT_PLAN',
+      label: '抗劫 · 投入 4 灵力',
+      description: '秘密计划',
+      payload: { action: 'resist', investment: 4 },
+    })).toBe('我已经根据公开局势完成了本轮密议。');
+    expect(publicBotMessage({
+      id: 'secret-vote',
+      seatId: 'seat-2',
+      type: 'SUBMIT_VOTE',
+      label: '启动飞升',
+      description: '秘密投票',
+      payload: { vote: 'launch' },
+    })).toBe('我已经完成密票，等所有人一起揭晓。');
   });
 
   it('falls back to local bot for provider tests without exposing reasoning_content', async () => {

@@ -121,6 +121,14 @@ describe('AI provider validation and fallback', () => {
     expect(request.legalActions.map((action) => action.id)).toContain(result.actionId);
   });
 
+  it('reports the actual local provider when an external provider falls back', async () => {
+    const request = aiRequest();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('{}', { status: 401 }))));
+
+    const result = await chooseAiMove(request);
+    expect(result).toMatchObject({ provider: 'local-bot', usedFallback: true });
+  });
+
   it('aborts at the configured timeout and falls back without blocking the room', async () => {
     process.env.AI_TIMEOUT_MS = '5';
     process.env.AI_MAX_TOTAL_WAIT_MS = '20';

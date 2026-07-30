@@ -1,5 +1,5 @@
 import { applyAction, assertActionBelongsToLegalSet, createGame, getLegalActions } from '../shared/game/engine';
-import { chooseHeuristicAction } from '../shared/game/bot';
+import { chooseHeuristicAction, publicBotMessage } from '../shared/game/bot';
 import { hashGameState } from '../shared/game/replay';
 import { getViewForSeat } from '../shared/game/view';
 import type { AiSeatConfig, CreateGameConfig, GameState, GameView, PlayerKind, SeatId } from '../shared/game/types';
@@ -109,7 +109,9 @@ function nextAvailableSeatId(room: RoomPayload): SeatId {
 export class RoomService {
   private readonly botQueues = new Map<string, Promise<RoomPayload>>();
 
-  constructor(private readonly storage: ServerStorage) {}
+  constructor(private readonly storage: ServerStorage) {
+    this.markPersistedHumansDisconnected();
+  }
 
   createRoom(input: { hostName: string; maxSeats: number; seed: number }) {
     const roomId = newId('room');
@@ -422,6 +424,31 @@ export class RoomService {
     if (room.hostSeatId !== seatId) throw new Error('Host permission required');
   }
 
+  private markPersistedHumansDisconnected(): void {
+    const disconnectedAt = new Date().toISOString();
+    for (const stored of this.storage.listRooms()) {
+      const room = stored.payload as RoomPayload;
+      const humanSeatIds: SeatId[] = [];
+      for (const seat of room.seats) {
+        if (seat.kind !== 'human') continue;
+        seat.connected = false;
+        seat.disconnectedAt = disconnectedAt;
+        const player = room.gameState?.players.find((candidate) => candidate.id === seat.id);
+        if (player) player.disconnected = true;
+        humanSeatIds.push(seat.id);
+      }
+      if (humanSeatIds.length === 0) continue;
+      this.storage.upsertRoom({
+        id: room.id,
+        code: room.code,
+        status: room.status,
+        hostSeatId: room.hostSeatId,
+        payload: room,
+      });
+      this.storage.appendEvent(room.id, 'server_restart_disconnected', { seatIds: humanSeatIds });
+    }
+  }
+
   private save(room: RoomPayload, eventType: string, eventPayload: unknown): void {
     this.storage.upsertRoom({
       id: room.id,
@@ -456,7 +483,9 @@ export class RoomService {
       const legalActions = getLegalActions(state, bot.id);
       const heuristic = chooseHeuristicAction(state, view, bot.id);
       let actionId = heuristic.action.id;
-      let reasoning = heuristic.publicRationale;
+      const configuredProvider = bot.ai?.provider ?? 'local-bot';
+      let usedProvider: AiSeatConfig['provider'] = 'local-bot';
+      let usedFallback = false;
       if (bot.ai?.provider && bot.ai.provider !== 'local-bot') {
         const ai = await chooseAiMove({
           seatConfig: bot.ai,
@@ -464,9 +493,10 @@ export class RoomService {
           legalActions,
           rulesDigest: '只能选择服务端提供的合法动作；目标是在保住仙台的同时争取飞升席位。',
         });
+        usedProvider = ai.provider;
+        usedFallback = ai.usedFallback;
         if (!ai.usedFallback && legalActions.some((action) => action.id === ai.actionId)) {
           actionId = ai.actionId;
-          reasoning = ai.reasoning;
         }
       }
       const action = legalActions.find((candidate) => candidate.id === actionId) ?? heuristic.action;
@@ -476,7 +506,7 @@ export class RoomService {
         id: newId('chat'),
         seatId: bot.id,
         name: bot.name,
-        message: reasoning.replace(/\s+/g, ' ').slice(0, 240),
+        message: publicBotMessage(action, heuristic.publicSpeech),
         createdAt: new Date().toISOString(),
       });
       room.chat = room.chat.slice(-100);
@@ -485,7 +515,9 @@ export class RoomService {
         seatId: bot.id,
         actionId: action.id,
         revision: room.gameState.revision,
-        usedProvider: bot.ai?.provider ?? 'local-bot',
+        configuredProvider,
+        usedProvider,
+        usedFallback,
       });
       room = this.getRoom(roomId);
     }

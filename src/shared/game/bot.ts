@@ -143,3 +143,19 @@ export function chooseHeuristicAction(
     publicSpeech: lines[(state.round + player!.seatIndex) % lines.length],
   };
 }
+
+export function publicBotMessage(action: GameAction, personaSpeech?: string): string {
+  switch (action.type) {
+    case 'READY_NEGOTIATION':
+      return personaSpeech ?? '先看清公开局势，再决定这一轮如何出手。';
+    case 'SUBMIT_PLAN':
+      return '我已经根据公开局势完成了本轮密议。';
+    case 'SUBMIT_VOTE':
+      return '我已经完成密票，等所有人一起揭晓。';
+    case 'CHOOSE_EXPLORE_CARD':
+    case 'DISCARD_CARD':
+      return '我已经完成了私下选择。';
+    default:
+      return `我选择了“${action.label}”。`;
+  }
+}

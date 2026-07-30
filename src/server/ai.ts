@@ -72,13 +72,17 @@ export function listProviders() {
   ];
 }
 
-function fallback(request: AiMoveRequest, reason = '外部模型不可用，已使用本地启发式决策。'): AiMoveResponse {
+function localDecision(
+  request: AiMoveRequest,
+  reason: string,
+  usedFallback: boolean,
+): AiMoveResponse {
   const legal = request.legalActions[0]!;
   return {
     actionId: legal.id,
     reasoning: `${reason} 选择“${legal.label}”。`,
-    provider: request.seatConfig.provider,
-    usedFallback: true,
+    provider: 'local-bot',
+    usedFallback,
   };
 }
 
@@ -111,6 +115,7 @@ function buildMessages(request: AiMoveRequest) {
         '你是《末法登仙台》的一名玩家。',
         '必须且只能选择给定 legalActions 中的一个 id。',
         '优先通过 choose_action 工具返回；如果工具不可用，只输出 JSON：{"actionId":"...","reasoning":"..."}。',
+        'reasoning 只能引用公开局势；严禁提及自己的手牌、天命、未揭晓计划、密票或其他私密字段。',
         `性格=${request.seatConfig.persona}，难度=${request.seatConfig.difficulty}。`,
         request.rulesDigest ? `规则摘要：${request.rulesDigest}` : '',
       ].filter(Boolean).join('\n'),
@@ -232,7 +237,9 @@ async function callOpenAiCompatible(
 }
 
 export async function chooseAiMove(request: AiMoveRequest): Promise<AiMoveResponse> {
-  if (request.seatConfig.provider === 'local-bot') return fallback(request, '本地启发式决策。');
+  if (request.seatConfig.provider === 'local-bot') {
+    return localDecision(request, '本地启发式决策。', false);
+  }
   try {
     return await callOpenAiCompatible(
       request,
@@ -240,6 +247,6 @@ export async function chooseAiMove(request: AiMoveRequest): Promise<AiMoveRespon
       Date.now() + numericEnv('AI_MAX_TOTAL_WAIT_MS', 28_000),
     );
   } catch {
-    return fallback(request);
+    return localDecision(request, '外部模型不可用，已使用本地启发式决策。', true);
   }
 }
