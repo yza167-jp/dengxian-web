@@ -35,6 +35,18 @@ export interface AiMoveResponse {
 }
 
 const circuits = new Map<string, { failures: number; openedUntil: number }>();
+type ProviderRequestMode = 'tool' | 'json';
+
+class ProviderHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly retryAfterMs: number | null,
+  ) {
+    super(`provider http ${status}`);
+  }
+}
+
+class ProviderOutputError extends Error {}
 
 export function listProviders() {
   return [
@@ -50,7 +62,10 @@ export function listProviders() {
     {
       id: 'deepseek',
       label: 'DeepSeek',
-      models: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+      models: Array.from(new Set([
+        process.env.DEEPSEEK_DEFAULT_MODEL ?? 'deepseek-v4-flash',
+        process.env.DEEPSEEK_PRO_MODEL ?? 'deepseek-v4-pro',
+      ])),
       model: process.env.DEEPSEEK_DEFAULT_MODEL ?? 'deepseek-v4-flash',
       available: Boolean(process.env.DEEPSEEK_API_KEY),
       status: process.env.DEEPSEEK_API_KEY ? 'available' as const : 'missing-key' as const,
@@ -86,11 +101,13 @@ function localDecision(
   };
 }
 
-function providerConfig(config: AiSeatConfig) {
+function providerConfig(config: AiSeatConfig, mode: ProviderRequestMode) {
   if (config.provider === 'deepseek') {
     return {
       key: process.env.DEEPSEEK_API_KEY,
-      baseUrl: process.env.DEEPSEEK_BETA_BASE_URL ?? 'https://api.deepseek.com/beta',
+      baseUrl: mode === 'tool'
+        ? process.env.DEEPSEEK_BETA_BASE_URL ?? 'https://api.deepseek.com/beta'
+        : process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com',
       model: config.model ?? process.env.DEEPSEEK_DEFAULT_MODEL ?? 'deepseek-v4-flash',
     };
   }
@@ -101,7 +118,7 @@ function providerConfig(config: AiSeatConfig) {
   };
 }
 
-function buildMessages(request: AiMoveRequest) {
+function buildMessages(request: AiMoveRequest, mode: ProviderRequestMode) {
   const legal = request.legalActions.map((action) => ({
     id: action.id,
     label: action.label,
@@ -114,7 +131,9 @@ function buildMessages(request: AiMoveRequest) {
       content: [
         '你是《末法登仙台》的一名玩家。',
         '必须且只能选择给定 legalActions 中的一个 id。',
-        '优先通过 choose_action 工具返回；如果工具不可用，只输出 JSON：{"actionId":"...","reasoning":"..."}。',
+        mode === 'tool'
+          ? '必须通过 choose_action 工具返回选择。'
+          : '只输出 JSON：{"actionId":"...","reasoning":"..."}，不要输出 Markdown。',
         'reasoning 只能引用公开局势；严禁提及自己的手牌、天命、未揭晓计划、密票或其他私密字段。',
         `性格=${request.seatConfig.persona}，难度=${request.seatConfig.difficulty}。`,
         request.rulesDigest ? `规则摘要：${request.rulesDigest}` : '',
@@ -145,17 +164,37 @@ function numericEnv(name: string, fallbackValue: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallbackValue;
 }
 
-async function callOpenAiCompatible(
+function retryAfterMs(response: Response): number | null {
+  const value = response.headers.get('retry-after');
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1_000);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
+}
+
+function isToolUnsupported(error: unknown): boolean {
+  return error instanceof ProviderHttpError &&
+    [400, 404, 405, 415, 422].includes(error.status);
+}
+
+function isTransientProviderError(error: unknown): boolean {
+  if (error instanceof ProviderOutputError) return true;
+  if (error instanceof ProviderHttpError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  return error instanceof TypeError ||
+    (error instanceof Error && error.name === 'AbortError');
+}
+
+async function requestProvider(
   request: AiMoveRequest,
-  attempt: number,
+  mode: ProviderRequestMode,
   deadline: number,
 ): Promise<AiMoveResponse> {
-  const cfg = providerConfig(request.seatConfig);
+  const cfg = providerConfig(request.seatConfig, mode);
   if (!cfg.key) throw new Error('provider api key is not configured');
   if (Date.now() >= deadline) throw new Error('provider total wait limit exceeded');
-  const circuitKey = `${request.seatConfig.provider}:${cfg.baseUrl}`;
-  const circuit = circuits.get(circuitKey);
-  if (circuit && circuit.openedUntil > Date.now()) throw new Error('provider circuit is open');
 
   const controller = new AbortController();
   const timeoutMs = Math.min(numericEnv('AI_TIMEOUT_MS', 12_000), Math.max(1, deadline - Date.now()));
@@ -171,46 +210,110 @@ async function callOpenAiCompatible(
       },
       body: JSON.stringify({
         model: cfg.model,
-        messages: buildMessages(request),
+        messages: buildMessages(request, mode),
         temperature: request.seatConfig.difficulty === 'hard' ? 0.35 : 0.55,
         max_tokens: 500,
         ...(isDeepSeek ? {
           thinking: { type: request.seatConfig.thinking ? 'enabled' : 'disabled' },
         } : {}),
         response_format: { type: 'json_object' },
-        tools: [{
-          type: 'function',
-          function: {
-            name: 'choose_action',
-            description: 'Choose one legal action id.',
-            ...(isDeepSeek ? { strict: true } : {}),
-            parameters: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['actionId', 'reasoning'],
-              properties: {
-                actionId: { type: 'string', enum: request.legalActions.map((action) => action.id) },
-                reasoning: { type: 'string' },
+        ...(mode === 'tool' ? {
+          tools: [{
+            type: 'function',
+            function: {
+              name: 'choose_action',
+              description: 'Choose one legal action id.',
+              ...(isDeepSeek ? { strict: true } : {}),
+              parameters: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['actionId', 'reasoning'],
+                properties: {
+                  actionId: { type: 'string', enum: request.legalActions.map((action) => action.id) },
+                  reasoning: { type: 'string' },
+                },
               },
             },
-          },
-        }],
-        tool_choice: { type: 'function', function: { name: 'choose_action' } },
+          }],
+          tool_choice: { type: 'function', function: { name: 'choose_action' } },
+        } : {}),
       }),
     });
-    if (!response.ok) throw new Error(`provider http ${response.status}`);
-    const raw = providerResponseSchema.parse(await response.json());
-    const message = raw.choices[0]!.message;
-    const toolArgs = message.tool_calls?.[0]?.function.arguments;
-    const parsed = aiResponseSchema.parse(toolArgs ? JSON.parse(toolArgs) as unknown : extractJson(message.content ?? '{}'));
-    if (!request.legalActions.some((action) => action.id === parsed.actionId)) throw new Error('model chose illegal action');
+    if (!response.ok) {
+      throw new ProviderHttpError(response.status, retryAfterMs(response));
+    }
+    try {
+      const raw = providerResponseSchema.parse(await response.json());
+      const message = raw.choices[0]!.message;
+      const toolArgs = message.tool_calls?.[0]?.function.arguments;
+      const parsed = aiResponseSchema.parse(
+        toolArgs
+          ? JSON.parse(toolArgs) as unknown
+          : extractJson(message.content ?? '{}'),
+      );
+      if (!request.legalActions.some((action) => action.id === parsed.actionId)) {
+        throw new ProviderOutputError('model chose illegal action');
+      }
+      return {
+        actionId: parsed.actionId,
+        reasoning: parsed.reasoning,
+        provider: request.seatConfig.provider,
+        usedFallback: false,
+      };
+    } catch (error) {
+      if (error instanceof ProviderOutputError) throw error;
+      throw new ProviderOutputError(error instanceof Error ? error.message : 'invalid provider output');
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function requestWithRetries(
+  request: AiMoveRequest,
+  mode: ProviderRequestMode,
+  attempt: number,
+  deadline: number,
+): Promise<AiMoveResponse> {
+  try {
+    return await requestProvider(request, mode, deadline);
+  } catch (error) {
+    const maxRetries = Math.floor(numericEnv('AI_MAX_RETRIES', 2));
+    if (!isTransientProviderError(error) || attempt >= maxRetries || Date.now() >= deadline) {
+      throw error;
+    }
+    const requestedDelay = error instanceof ProviderHttpError && error.retryAfterMs !== null
+      ? error.retryAfterMs
+      : 120 * 2 ** attempt + Math.floor(Math.random() * 120);
+    const delay = Math.min(requestedDelay, Math.max(0, deadline - Date.now()));
+    if (delay > 0) await sleep(delay);
+    return requestWithRetries(request, mode, attempt + 1, deadline);
+  }
+}
+
+async function callOpenAiCompatible(
+  request: AiMoveRequest,
+  deadline: number,
+): Promise<AiMoveResponse> {
+  const toolConfig = providerConfig(request.seatConfig, 'tool');
+  const jsonConfig = providerConfig(request.seatConfig, 'json');
+  const circuitKey = [
+    request.seatConfig.provider,
+    toolConfig.baseUrl,
+    jsonConfig.baseUrl,
+  ].join(':');
+  const circuit = circuits.get(circuitKey);
+  if (circuit && circuit.openedUntil > Date.now()) throw new Error('provider circuit is open');
+  try {
+    let result: AiMoveResponse;
+    try {
+      result = await requestWithRetries(request, 'tool', 0, deadline);
+    } catch (error) {
+      if (!isToolUnsupported(error)) throw error;
+      result = await requestWithRetries(request, 'json', 0, deadline);
+    }
     circuits.set(circuitKey, { failures: 0, openedUntil: 0 });
-    return {
-      actionId: parsed.actionId,
-      reasoning: parsed.reasoning,
-      provider: request.seatConfig.provider,
-      usedFallback: false,
-    };
+    return result;
   } catch (error) {
     const current = circuits.get(circuitKey) ?? { failures: 0, openedUntil: 0 };
     const failures = current.failures + 1;
@@ -221,18 +324,7 @@ async function callOpenAiCompatible(
         ? Date.now() + numericEnv('AI_CIRCUIT_RESET_MS', 60_000)
         : 0,
     });
-    const maxRetries = numericEnv('AI_MAX_RETRIES', 2);
-    if (attempt < maxRetries && Date.now() < deadline) {
-      const delay = Math.min(
-        120 * 2 ** attempt + Math.floor(Math.random() * 120),
-        Math.max(0, deadline - Date.now()),
-      );
-      if (delay > 0) await sleep(delay);
-      return callOpenAiCompatible(request, attempt + 1, deadline);
-    }
     throw error;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -243,7 +335,6 @@ export async function chooseAiMove(request: AiMoveRequest): Promise<AiMoveRespon
   try {
     return await callOpenAiCompatible(
       request,
-      0,
       Date.now() + numericEnv('AI_MAX_TOTAL_WAIT_MS', 28_000),
     );
   } catch {

@@ -5,6 +5,7 @@ import { getViewForSeat } from '../../src/shared/game/view';
 
 const ENV_KEYS = [
   'DEEPSEEK_API_KEY',
+  'DEEPSEEK_BASE_URL',
   'DEEPSEEK_BETA_BASE_URL',
   'AI_TIMEOUT_MS',
   'AI_MAX_RETRIES',
@@ -59,6 +60,7 @@ function providerResponse(message: {
 
 beforeEach(() => {
   process.env.DEEPSEEK_API_KEY = 'test-only-key';
+  process.env.DEEPSEEK_BASE_URL = `https://deepseek-json.test/${crypto.randomUUID()}`;
   process.env.DEEPSEEK_BETA_BASE_URL = `https://deepseek.test/${crypto.randomUUID()}`;
   process.env.AI_MAX_RETRIES = '0';
   process.env.AI_MAX_TOTAL_WAIT_MS = '100';
@@ -105,6 +107,77 @@ describe('AI provider validation and fallback', () => {
 
     const result = await chooseAiMove(request);
     expect(result).toMatchObject({ actionId: selected.id, usedFallback: false });
+  });
+
+  it('retries as JSON-only when a provider rejects tool parameters', async () => {
+    const request = aiRequest();
+    const selected = request.legalActions.at(-1)!;
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        tools?: unknown;
+        tool_choice?: unknown;
+      };
+      if (fetchMock.mock.calls.length === 1) {
+        expect(url).toContain(process.env.DEEPSEEK_BETA_BASE_URL!);
+        expect(body.tools).toBeDefined();
+        expect(body.tool_choice).toBeDefined();
+        return Promise.resolve(new Response('{}', { status: 422 }));
+      }
+      expect(url).toContain(process.env.DEEPSEEK_BASE_URL!);
+      expect(body.tools).toBeUndefined();
+      expect(body.tool_choice).toBeUndefined();
+      return Promise.resolve(providerResponse({
+        content: JSON.stringify({ actionId: selected.id, reasoning: 'JSON-only 选择。' }),
+      }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await chooseAiMove(request);
+    expect(result).toMatchObject({ actionId: selected.id, usedFallback: false, provider: 'deepseek' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry permanent authentication failures', async () => {
+    process.env.AI_MAX_RETRIES = '2';
+    const request = aiRequest();
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 401 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await chooseAiMove(request);
+    expect(result).toMatchObject({ provider: 'local-bot', usedFallback: true });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('honors Retry-After and retries transient provider failures', async () => {
+    process.env.AI_MAX_RETRIES = '1';
+    process.env.AI_MAX_TOTAL_WAIT_MS = '1000';
+    const request = aiRequest();
+    const selected = request.legalActions[0]!;
+    const fetchMock = vi.fn(() => {
+      if (fetchMock.mock.calls.length === 1) {
+        return Promise.resolve(new Response('{}', {
+          status: 429,
+          headers: { 'retry-after': '0' },
+        }));
+      }
+      return Promise.resolve(providerResponse({
+        tool_calls: [{
+          function: {
+            arguments: JSON.stringify({ actionId: selected.id, reasoning: '重试成功。' }),
+          },
+        }],
+      }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await chooseAiMove(request);
+    expect(result).toMatchObject({ actionId: selected.id, usedFallback: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it.each([
