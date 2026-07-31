@@ -6,7 +6,7 @@
 
 | 检查 | 结果 | 证据 |
 |---|---|---|
-| `npm audit` | Pass; later retry network-blocked | 最近一次成功的在线检查为 0 vulnerabilities；锁文件未变化，随后重试因 npm registry TLS 建连中断而无法取得新结果 |
+| `npm audit` | Pass | 本地最近一次成功检查为 0 vulnerabilities；最终 GitHub Actions `npm run verify` 也通过同一高危漏洞门禁 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
 | `npm run verify:assets` | Pass | 110/110 个上游图片资产存在且通过 PNG/WebP 签名、最小体积、固定 SHA、内容 ID 与清单覆盖校验 |
@@ -14,12 +14,12 @@
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm run smoke:production` | Pass | 随机隔离端口真实启动构建产物；health、首页、Provider 脱敏元数据和天劫卡资源均通过，哨兵密钥未出现在公共响应 |
-| Fresh clone smoke | Pass | 从与当时 `origin/main` 同 SHA 的独立无硬链接 clone 执行 `npm ci`、构建并在无 `.env` 下启动；health、首页、天劫卡资源均为 200；远端直连 clone 的两次尝试受本机 GitHub TLS 握手中断 |
-| `npm run test:e2e` | Historical pass | Chromium 16/16；本轮按用户指定只做 Safari 视觉验收，未重跑 Playwright |
-| `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过最近一次可用的 npm audit、typecheck、lint、Vitest、模拟、构建与生产烟测；随后 audit 重试受 registry 网络阻塞；按用户指定使用 Safari，未重跑 Playwright |
+| Fresh clone smoke | Pass | 独立无硬链接 clone 已执行 `npm ci`、构建并在无 `.env` 下启动；最终提交 `194cfa9` 又由 GitHub runner 重新 checkout、安装、验证和构建 |
+| `npm run test:e2e` | Pass | Chromium 16/16 在最终 GitHub Actions run #19 通过；本轮界面人工验收仍按用户指定使用 Safari |
+| `npm run verify` | Pass | 最终提交 `194cfa9` 在 GitHub Actions run #19 完整通过同步、素材校验、audit、typecheck、lint、83 项 Vitest、120 局模拟、构建、生产烟测与 16 项 E2E |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
 | `docker build` | Blocked externally | Docker Desktop daemon 已启动；隔离 `DOCKER_CONFIG` 后，匿名 token 与公共 ECR 请求仍由 daemon 端返回 EOF，确认阻塞在本机 Docker registry/代理链路；未把该外部失败声称为镜像通过 |
-| CI Docker release smoke | Added; remote run pending | CI 会真实构建镜像、启动容器、等待 `HEALTHCHECK`，再探测 health、首页和上游卡牌；本地测试锁定工作流契约，首次远端运行需等待 GitHub TLS 链路恢复并推送 |
+| CI Docker release smoke | Pass | GitHub Actions run #19 已真实构建镜像、启动非 root 容器、等待 `HEALTHCHECK`，并成功探测 health、首页与上游卡牌资源 |
 
 120 局模拟结果：642 个总轮次、37,093 个合法动作，平均 5.35 轮、309.11 个动作，单局最多 558 个动作；4/5/6 人各 40 局，并轮换人物组合使七名人物各出场 85–86 次。模拟逐动作校验 Zod 状态结构、修为/灵力/功德/仙台轨/裂痕边界、revision 单调递增、合法动作归属、事件可见性和公开玩家视图无私密字段，并输出各人物出场数、飞升数与飞升率。所有对局在有界步数内终止。本次固定策略样本全部飞升，不应将该比率解释为平衡性或真人胜率结论。
 
@@ -98,4 +98,4 @@ Playwright 覆盖：
 
 Node 24 当前会为 `node:sqlite` 打印 ExperimentalWarning；数据库 API 在本项目所需范围内通过单测、生产启动和 E2E。该提示不是测试失败，但升级 Node 时应重新运行迁移与恢复测试。
 
-本机 Docker Desktop daemon 已运行，`docker info` 与 Compose 配置均可用；但真实构建在拉取 `node:24-bookworm-slim` 元数据时持续停滞。使用隔离的临时 `DOCKER_CONFIG` 绕开用户 credential helper 后，Docker Hub 匿名 token 请求与公共 ECR manifest 请求仍由 daemon 返回 EOF；宿主机 `curl` 可直接访问同一 registry，且 daemon 配置了本机代理，因此阻塞位于当前 Docker Desktop 的 registry/代理链路，不是项目 Dockerfile 的静态解析。未修改用户的网络或凭据设置，目标环境仍应执行一次 `docker compose up --build`。
+本机 Docker Desktop daemon 已运行，`docker info` 与 Compose 配置均可用；但本机真实构建在拉取 `node:24-bookworm-slim` 元数据时持续停滞。使用隔离的临时 `DOCKER_CONFIG` 绕开用户 credential helper 后，Docker Hub 匿名 token 请求与公共 ECR manifest 请求仍由 daemon 返回 EOF；宿主机 `curl` 可直接访问同一 registry，且 daemon 配置了本机代理，因此阻塞位于当前工作站 Docker Desktop 的 registry/代理链路。GitHub Actions run #19 已使用同一 Dockerfile 成功构建、启动、通过健康检查并探测生产路由，证明发布镜像契约本身可用；未修改用户的网络或凭据设置。
