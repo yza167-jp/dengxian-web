@@ -70,4 +70,37 @@ describe('client api payload mapping', () => {
       'x-bot-manager-token': 'manager-token-that-is-long-enough-1234',
     });
   });
+
+  it('runs a provider probe with an admin token and no custom game view', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({
+      ok: true,
+      requestedProvider: 'deepseek',
+      requestedModel: 'deepseek-v4-flash',
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      usedFallback: false,
+      latencyMs: 321,
+      retryCount: 0,
+      requestMode: 'tool',
+    })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await clientApi.providerTest('provider-admin-token', {
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/provider-test', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        provider: 'deepseek',
+        model: 'deepseek-v4-flash',
+      }),
+    }));
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.headers).toEqual({
+      'content-type': 'application/json',
+      'x-provider-test-token': 'provider-admin-token',
+    });
+  });
 });

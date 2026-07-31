@@ -5,12 +5,13 @@ import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { Server as SocketServer } from 'socket.io';
 import { ZodError } from 'zod';
-import { chooseAiMove, listProviders } from './ai';
+import { chooseAiMove, listProviders, validateAiConfiguration } from './ai';
 import { BotService } from './botService';
 import { RoomService } from './roomService';
+import { createGame } from '../shared/game/engine';
+import { getViewForSeat } from '../shared/game/view';
 import {
   addBotSchema,
-  aiMoveSchema,
   botCreateSchema,
   botUpdateSchema,
   chatSchema,
@@ -20,6 +21,7 @@ import {
   joinRoomSchema,
   readySchema,
   removeBotSchema,
+  providerTestSchema,
   saveCreateSchema,
   saveUpdateSchema,
   startRoomSchema,
@@ -170,6 +172,7 @@ export function createApp(options: {
   timeoutSweepMs?: number;
   log?: (event: Record<string, unknown>) => void;
 } = {}) {
+  validateAiConfiguration();
   const storage = options.storage ?? new ServerStorage();
   const bots = new BotService(storage);
   const rooms = new RoomService(storage, bots, {
@@ -296,9 +299,47 @@ export function createApp(options: {
         res.status(403).json({ error: 'Provider test authorization failed' });
         return;
       }
-      const parsed = aiMoveSchema.parse(req.body);
-      const result = await chooseAiMove(parsed);
-      res.json({ ok: true, provider: result.provider, usedFallback: result.usedFallback });
+      const parsed = providerTestSchema.parse(req.body);
+      const state = createGame({
+        mode: 'solo',
+        seed: 20_260_731,
+        seats: Array.from({ length: 4 }, (_, index) => ({
+          id: `probe-seat-${index + 1}`,
+          name: `探针修士 ${index + 1}`,
+          kind: 'bot' as const,
+          ai: {
+            provider: 'local-bot' as const,
+            difficulty: 'normal' as const,
+            persona: 'steady' as const,
+          },
+        })),
+      });
+      const actorId = state.window?.order[state.window.cursor];
+      if (!actorId) throw new Error('Provider probe could not create a legal decision');
+      const view = getViewForSeat(state, actorId);
+      const result = await chooseAiMove({
+        seatConfig: {
+          provider: parsed.provider,
+          model: parsed.model,
+          difficulty: 'normal',
+          persona: 'steady',
+          thinking: parsed.thinking,
+        },
+        view,
+        legalActions: view.legalActions,
+        rulesDigest: '这是最小连通性测试。只从合法动作中选择一项，不会进入真实对局。',
+      });
+      res.json({
+        ok: !result.usedFallback && result.provider === parsed.provider,
+        requestedProvider: parsed.provider,
+        requestedModel: result.requestedModel,
+        provider: result.provider,
+        model: result.model,
+        usedFallback: result.usedFallback,
+        latencyMs: result.latencyMs,
+        retryCount: result.retryCount,
+        requestMode: result.requestMode,
+      });
     } catch (error) {
       next(error);
     }

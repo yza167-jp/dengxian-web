@@ -24,12 +24,14 @@ DEEPSEEK_PRO_MODEL=deepseek-v4-pro
 OPENAI_COMPATIBLE_API_KEY=
 OPENAI_COMPATIBLE_BASE_URL=
 OPENAI_COMPATIBLE_DEFAULT_MODEL=
+AI_FALLBACK_PROVIDER=local-bot
 PROVIDER_TEST_TOKEN=
 ```
 
 `local-bot` does not require any environment variable.
+`AI_FALLBACK_PROVIDER` currently accepts only `local-bot`; unsupported values fail fast at server startup instead of leaving a room without a reliable fallback.
 
-`POST /api/provider-test` is disabled unless `PROVIDER_TEST_TOKEN` is set and requires the same value in `x-provider-test-token`. There is no public arbitrary AI-completion endpoint, preventing browser clients from spending configured provider credit.
+`POST /api/provider-test` is disabled unless `PROVIDER_TEST_TOKEN` is set and requires the same value in `x-provider-test-token`. The settings page accepts this administrator token for one request without persisting it. The endpoint accepts only `provider`, optional `model`, and `thinking`; the server builds a fixed, low-cost legal-action probe and rejects caller-supplied game views or prompts. There is no public arbitrary AI-completion endpoint, preventing browser clients from spending configured provider credit.
 
 ## Decision Contract
 
@@ -81,11 +83,12 @@ Room automation computes a legal heuristic decision first. External providers ma
 Verified behavior:
 
 - Each AI turn emits a bounded structured diagnostic with room/turn/seat IDs, configured and actual provider/model, request mode, latency, retry count, token usage when returned, and fallback status. Prompts, API keys, private views, and model reasoning are excluded.
-- `npm test` passed 62 tests, including strict tool-call, tool-rejection → JSON-only transition, non-retryable 401, `Retry-After`, timeout, 429, illegal-action, no-key fallback, structured diagnostics, private-rationale isolation and non-exposure of `reasoning_content`.
+- Provider settings expose configuration status plus an administrator-authorized fixed probe. Its result distinguishes a real provider response from safe local fallback and reports model, latency, request mode, and retry count without returning the chosen action or provider reasoning.
+- Automated tests cover strict tool-call, tool-rejection → JSON-only transition, non-retryable 401, `Retry-After`, timeout, 429, illegal-action, no-key fallback, structured diagnostics, private-rationale isolation and non-exposure of `reasoning_content`.
 - `npm run sim` passed 120 all-bot games across 4, 5, and 6 players.
 
 ## Live-call boundary
 
-- No live DeepSeek or OpenAI-compatible keyed request was tested in this pass.
-- No key was available in the verification environment, so no real billed request was issued.
+- A server-only DeepSeek key was used for a minimal `deepseek-v4-flash` JSON action probe and a Safari gameplay pass. The call returned a legal action without fallback; exact latency and usage evidence are recorded in `docs/TEST_REPORT.md`.
+- No live OpenAI-compatible request was issued because no compatible endpoint was configured.
 - Defaults were checked against current official DeepSeek documentation on 2026-07-30; recheck model availability before deployment because provider names are time-sensitive.

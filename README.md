@@ -123,6 +123,7 @@ npm run test:e2e
 - [Safari：放大后的秘密计划控制](docs/screenshots/safari-secret-plan.jpg)
 - [Safari：独立机缘卡牌选择](docs/screenshots/safari-opportunity-gallery.jpg)
 - [Safari：DeepSeek Bot 成长与消费](docs/screenshots/safari-deepseek-bot-dashboard.jpg)
+- [Safari：DeepSeek 最小连通性探针](docs/screenshots/safari-provider-probe.jpg)
 
 ## 上游与许可
 

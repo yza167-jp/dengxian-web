@@ -13,6 +13,7 @@ import {
 } from '../../shared/data/content';
 import type { BotProfileFields } from '../../shared/bots';
 import type { ActionChoice, CharacterId, GameAction, GameOutcome, GameView, OpportunityId, PublicPlayerView } from '../../shared/game/types';
+import { clientApi, type ProviderTestResult } from '../api/clientApi';
 import { ritualAudio } from '../audio/sound';
 import { useGameStore } from '../store/gameStore';
 
@@ -1671,11 +1672,39 @@ function Settings() {
   const setAudio = useGameStore((state) => state.setAudio);
   const providers = useGameStore((state) => state.providers);
   const refreshDiagnostics = useGameStore((state) => state.refreshDiagnostics);
+  const [probeProvider, setProbeProvider] = useState<'deepseek' | 'openai-compatible'>('deepseek');
+  const [probeModel, setProbeModel] = useState('');
+  const [probeToken, setProbeToken] = useState('');
+  const [probePending, setProbePending] = useState(false);
+  const [probeResult, setProbeResult] = useState<ProviderTestResult | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
   useEffect(() => {
     ritualAudio.setMuted(muted);
     ritualAudio.setVolume(volume);
     document.documentElement.dataset.reducedMotion = String(reducedMotion);
   }, [muted, reducedMotion, volume]);
+  useEffect(() => {
+    void refreshDiagnostics();
+  }, [refreshDiagnostics]);
+  const runProviderProbe = async () => {
+    setProbePending(true);
+    setProbeResult(null);
+    setProbeError(null);
+    try {
+      const result = await clientApi.providerTest(probeToken.trim(), {
+        provider: probeProvider,
+        model: probeModel.trim() || undefined,
+        thinking: false,
+      });
+      setProbeResult(result);
+      await refreshDiagnostics();
+    } catch (error) {
+      setProbeError(error instanceof Error ? error.message : 'Provider 连通性测试失败');
+    } finally {
+      setProbeToken('');
+      setProbePending(false);
+    }
+  };
   return (
     <section className="panel-page">
       <div className="section-head"><p className="eyebrow">无障碍 / Provider</p><h2>设置与诊断</h2></div>
@@ -1688,6 +1717,54 @@ function Settings() {
       <div className="list-stack">
         {providers.map((provider) => <article key={provider.id}><strong>{provider.label}</strong><span>{provider.status}</span><small>{provider.message ?? provider.model}</small></article>)}
       </div>
+      <section className="rule-card provider-probe" aria-labelledby="provider-probe-title">
+        <div className="section-head compact">
+          <p className="eyebrow">真实最小请求</p>
+          <h3 id="provider-probe-title">Provider 连通性测试</h3>
+        </div>
+        <p className="rules-digest">
+          输入服务器环境变量 <code>PROVIDER_TEST_TOKEN</code>，发起一次固定、低成本的合法动作选择。令牌只用于本次请求，不会写入浏览器存储；这里不要填写 DeepSeek API Key。
+        </p>
+        <div className="setup-grid">
+          <label>
+            Provider
+            <select value={probeProvider} onChange={(event) => setProbeProvider(event.target.value as typeof probeProvider)}>
+              <option value="deepseek">DeepSeek</option>
+              <option value="openai-compatible">OpenAI-compatible</option>
+            </select>
+          </label>
+          <label>
+            模型（可选）
+            <input value={probeModel} onChange={(event) => setProbeModel(event.target.value)} placeholder="留空使用服务端默认" />
+          </label>
+          <label>
+            诊断管理员令牌
+            <input
+              type="password"
+              autoComplete="off"
+              value={probeToken}
+              onChange={(event) => setProbeToken(event.target.value)}
+              placeholder="PROVIDER_TEST_TOKEN"
+            />
+          </label>
+          <button
+            className="primary-action wide"
+            type="button"
+            disabled={probePending || probeToken.trim().length === 0}
+            onClick={() => void runProviderProbe()}
+          >
+            {probePending ? '正在探测…' : '运行最小连通性测试'}
+          </button>
+        </div>
+        {probeResult ? (
+          <div className={`info-strip ${probeResult.ok ? '' : 'is-warning'}`} role="status">
+            {probeResult.ok
+              ? `${probeResult.requestedProvider} 已连通：${probeResult.model}，${probeResult.latencyMs}ms，${probeResult.requestMode} 模式。`
+              : `${probeResult.requestedProvider} 未通过实连；本次已安全回退至 ${probeResult.provider}，没有阻塞对局。`}
+          </div>
+        ) : null}
+        {probeError ? <div className="info-strip is-error" role="alert">{probeError}</div> : null}
+      </section>
     </section>
   );
 }

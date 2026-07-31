@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chooseAiMove, createAiPublicChatReply, type AiMoveRequest } from '../../src/server/ai';
+import {
+  chooseAiMove,
+  createAiPublicChatReply,
+  validateAiConfiguration,
+  type AiMoveRequest,
+} from '../../src/server/ai';
 import { estimateDeepSeekUsdMicros } from '../../src/server/providerPricing';
 import { createGame } from '../../src/shared/game/engine';
 import { getViewForSeat } from '../../src/shared/game/view';
@@ -12,6 +17,7 @@ const ENV_KEYS = [
   'AI_MAX_RETRIES',
   'AI_MAX_TOTAL_WAIT_MS',
   'AI_CIRCUIT_FAILURE_THRESHOLD',
+  'AI_FALLBACK_PROVIDER',
 ] as const;
 
 const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
@@ -82,6 +88,13 @@ afterEach(() => {
 });
 
 describe('AI provider validation and fallback', () => {
+  it('fails fast when the configured fallback is not the supported local bot', () => {
+    process.env.AI_FALLBACK_PROVIDER = 'remote-provider';
+    expect(() => validateAiConfiguration()).toThrow(/supports only local-bot/);
+    process.env.AI_FALLBACK_PROVIDER = 'local-bot';
+    expect(() => validateAiConfiguration()).not.toThrow();
+  });
+
   it('accepts a strict DeepSeek tool call only when it names a legal action', async () => {
     const request = aiRequest();
     const selected = request.legalActions[0]!;

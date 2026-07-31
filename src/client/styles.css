@@ -468,6 +468,34 @@ input[type="range"],
   color: #dff6ed;
 }
 
+.info-strip.is-warning {
+  border-color: rgba(215, 182, 102, 0.4);
+  border-left-color: var(--gold-bright);
+  background-color: rgba(72, 48, 24, 0.5);
+  color: #fff1c7;
+}
+
+.info-strip.is-error {
+  border-color: rgba(201, 89, 77, 0.45);
+  border-left-color: #e38377;
+  background-color: rgba(87, 27, 27, 0.54);
+  color: #ffe1dc;
+}
+
+.provider-probe {
+  margin-top: 26px;
+  padding: 22px;
+}
+
+.provider-probe .section-head {
+  margin-bottom: 14px;
+}
+
+.provider-probe .setup-grid {
+  align-items: end;
+  margin: 20px 0;
+}
+
 .menu-saves {
   display: flex;
   flex-wrap: wrap;

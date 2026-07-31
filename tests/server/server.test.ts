@@ -606,7 +606,6 @@ describe('server http contracts', () => {
   });
 
   it('falls back to local bot for provider tests without exposing reasoning_content', async () => {
-    const { actor } = await createStartedRoom();
     const previousToken = process.env.PROVIDER_TEST_TOKEN;
     process.env.PROVIDER_TEST_TOKEN = 'test-provider-token';
     try {
@@ -615,14 +614,25 @@ describe('server http contracts', () => {
         .post('/api/provider-test')
         .set('x-provider-test-token', 'test-provider-token')
         .send({
-          seatConfig: { provider: 'deepseek', difficulty: 'normal', persona: 'steady' },
-          view: actor.snapshot.view,
-          legalActions: actor.snapshot.view!.legalActions,
+          provider: 'deepseek',
         })
         .expect(200);
-      expect(response.body.ok).toBe(true);
+      expect(response.body.ok).toBe(false);
+      expect(response.body.requestedProvider).toBe('deepseek');
+      expect(response.body.provider).toBe('local-bot');
       expect(response.body.usedFallback).toBe(true);
       expect(JSON.stringify(response.body)).not.toContain('reasoning_content');
+      expect(JSON.stringify(response.body)).not.toContain('legalActions');
+      expect(JSON.stringify(response.body)).not.toContain('view');
+
+      await request(app.app)
+        .post('/api/provider-test')
+        .set('x-provider-test-token', 'test-provider-token')
+        .send({
+          provider: 'deepseek',
+          view: { forged: true },
+        })
+        .expect(400);
     } finally {
       if (previousToken === undefined) delete process.env.PROVIDER_TEST_TOKEN;
       else process.env.PROVIDER_TEST_TOKEN = previousToken;

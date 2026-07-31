@@ -121,3 +121,9 @@ export const aiMoveSchema = z.object({
   }).passthrough()).min(1).transform((actions) => actions as GameAction[]),
   rulesDigest: z.string().max(4_000).optional(),
 });
+
+export const providerTestSchema = z.object({
+  provider: z.enum(['deepseek', 'openai-compatible']).default('deepseek'),
+  model: z.string().trim().min(1).max(120).optional(),
+  thinking: z.boolean().default(false),
+}).strict();

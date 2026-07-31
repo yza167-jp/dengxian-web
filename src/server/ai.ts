@@ -158,6 +158,13 @@ export function listProviders() {
   ];
 }
 
+export function validateAiConfiguration(): void {
+  const fallbackProvider = process.env.AI_FALLBACK_PROVIDER?.trim() || 'local-bot';
+  if (fallbackProvider !== 'local-bot') {
+    throw new Error('AI_FALLBACK_PROVIDER currently supports only local-bot');
+  }
+}
+
 function localDecision(
   request: AiMoveRequest,
   reason: string,

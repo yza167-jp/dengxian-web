@@ -11,6 +11,18 @@ export interface ProviderDiagnostic {
   message?: string;
 }
 
+export interface ProviderTestResult {
+  ok: boolean;
+  requestedProvider: 'deepseek' | 'openai-compatible';
+  requestedModel: string;
+  provider: AiSeatConfig['provider'];
+  model: string;
+  usedFallback: boolean;
+  latencyMs: number;
+  retryCount: number;
+  requestMode: 'tool' | 'json' | 'local';
+}
+
 export interface RoomSeatView {
   id: SeatId;
   name: string;
@@ -154,6 +166,21 @@ export const clientApi = {
   async providers(): Promise<ProviderDiagnostic[]> {
     const response = await requestJson<{ providers: ProviderDiagnostic[] }>('/api/providers');
     return response.providers;
+  },
+
+  providerTest(
+    adminToken: string,
+    input: {
+      provider: 'deepseek' | 'openai-compatible';
+      model?: string;
+      thinking?: boolean;
+    },
+  ): Promise<ProviderTestResult> {
+    return requestJson('/api/provider-test', {
+      method: 'POST',
+      headers: { 'x-provider-test-token': adminToken },
+      body: JSON.stringify(input),
+    });
   },
 
   async botPresets(): Promise<readonly BotPreset[]> {
