@@ -63,8 +63,11 @@ npm run lint
 npm test
 npm run sim
 npm run build
+npm run smoke:production
 npm run test:e2e
 ```
+
+`smoke:production` starts the built Node server on an isolated local port and checks `/api/health`, the production React shell, redacted provider metadata, and a vendored upstream card asset. It also injects sentinel secrets and fails if any sentinel appears in a public response.
 
 Current verification evidence is listed in [TEST_REPORT.md](TEST_REPORT.md).
 

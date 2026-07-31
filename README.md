@@ -107,8 +107,11 @@ npm run lint
 npm test
 npm run sim
 npm run build
+npm run smoke:production
 npm run test:e2e
 ```
+
+`smoke:production` 会在随机本机端口启动刚构建的生产服务，并真实检查健康接口、React 首页、Provider 脱敏元数据与上游天劫卡资源；测试结束后自动关闭进程并清理临时 SQLite。
 
 ## 截图
 

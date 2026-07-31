@@ -17,8 +17,9 @@
     "test:e2e": "playwright test",
     "e2e": "npm run test:e2e",
     "build": "npm run sync:upstream && vite build && tsup src/server/index.ts --format esm --platform node --target node24 --out-dir dist/server --clean false && tsup scripts/verify-replay.ts --format esm --platform node --target node24 --out-dir dist/scripts --clean false",
+    "smoke:production": "tsx scripts/production-smoke.ts",
     "start": "NODE_ENV=production node --env-file-if-exists=.env dist/server/index.js",
-    "verify": "npm run sync:upstream && npm audit && npm run typecheck && npm run lint && npm test && npm run sim && npm run build && npm run test:e2e"
+    "verify": "npm run sync:upstream && npm audit && npm run typecheck && npm run lint && npm test && npm run sim && npm run build && npm run smoke:production && npm run test:e2e"
   },
   "dependencies": {
     "compression": "^1.8.1",

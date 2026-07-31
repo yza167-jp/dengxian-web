@@ -12,10 +12,10 @@
 | `npm test` | Pass | 7 files，82 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
-| `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
-| Fresh clone smoke | Pass | 从远端 `8338b27` 浅克隆后执行 `npm ci`、构建并在无 `.env` 下启动；health、首页、天劫卡资源均为 200 |
+| `npm run smoke:production` | Pass | 随机隔离端口真实启动构建产物；health、首页、Provider 脱敏元数据和天劫卡资源均通过，哨兵密钥未出现在公共响应 |
+| Fresh clone smoke | Pass | 从与当时 `origin/main` 同 SHA 的独立无硬链接 clone 执行 `npm ci`、构建并在无 `.env` 下启动；health、首页、天劫卡资源均为 200；远端直连 clone 的两次尝试受本机 GitHub TLS 握手中断 |
 | `npm run test:e2e` | Historical pass | Chromium 16/16；本轮按用户指定只做 Safari 视觉验收，未重跑 Playwright |
-| `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过最近一次可用的 npm audit、typecheck、lint、Vitest、模拟与构建；随后 audit 重试受 registry 网络阻塞；按用户指定使用 Safari，未重跑 Playwright |
+| `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过最近一次可用的 npm audit、typecheck、lint、Vitest、模拟、构建与生产烟测；随后 audit 重试受 registry 网络阻塞；按用户指定使用 Safari，未重跑 Playwright |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
 | `docker build` | Blocked externally | Docker Desktop daemon 已启动；隔离 `DOCKER_CONFIG` 后，匿名 token 与公共 ECR 请求仍由 daemon 端返回 EOF，确认阻塞在本机 Docker registry/代理链路；未把该外部失败声称为镜像通过 |
 
