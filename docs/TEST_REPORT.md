@@ -13,6 +13,7 @@
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
+| Fresh clone smoke | Pass | 从远端 `c81f26a` 浅克隆后执行 `npm ci`、复制 `.env.example`、构建并启动；health、首页、天劫卡资源均为 200 |
 | `npm run test:e2e` | Historical pass | Chromium 16/16；本轮按用户指定只做 Safari 视觉验收，未重跑 Playwright |
 | `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过 typecheck、lint、Vitest、模拟与构建；未重跑 `npm audit` / Playwright |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
