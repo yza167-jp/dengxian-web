@@ -44,6 +44,7 @@ export interface AiSeatConfig {
   difficulty: Difficulty;
   persona: Persona;
   thinking?: boolean;
+  botProfileId?: string;
 }
 
 export interface SeatConfig {

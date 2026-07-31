@@ -2269,7 +2269,7 @@ textarea {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(42px, 1fr) 28px;
+  grid-template-rows: minmax(42px, 1fr) 44px;
   gap: 3px;
   padding: 4px;
   overflow: hidden;
@@ -2290,14 +2290,14 @@ textarea {
 
 .plan-action-option {
   min-width: 0;
-  min-height: 28px;
-  padding: 3px 2px;
+  min-height: 44px;
+  padding: 8px 4px;
   overflow: hidden;
   border: 1px solid rgba(215, 182, 102, 0.4);
   border-radius: var(--radius-xs);
   background: rgba(18, 25, 23, 0.92);
   color: #ecfff8;
-  font-size: 0.7rem;
+  font-size: 0.76rem;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2370,9 +2370,9 @@ textarea {
 }
 
 .plan-action-options .plan-action-option {
-  min-height: 28px;
-  height: 28px;
-  padding: 3px 2px;
+  min-height: 44px;
+  height: 44px;
+  padding: 8px 4px;
   text-align: center;
 }
 
@@ -2603,13 +2603,13 @@ textarea {
   }
 
   .mofa-plan-card {
-    grid-template-rows: minmax(42px, 1fr) 26px;
+    grid-template-rows: minmax(42px, 1fr) 44px;
   }
 
   .plan-action-options .plan-action-option {
-    min-height: 26px;
-    height: 26px;
-    font-size: 0.62rem;
+    min-height: 44px;
+    height: 44px;
+    font-size: 0.7rem;
   }
 
   .decision-confirm {
@@ -2783,5 +2783,687 @@ textarea {
 
   .mofa-action-dock.is-secret-plan .mofa-action-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Bot roster, real card faces, and negotiation-first interaction */
+.main-nav a,
+.primary-action,
+.secondary-action,
+.tab-row button,
+.quick-promises button,
+.chat-input button,
+.list-stack button,
+.seat-list button,
+.drawer-close,
+.plan-action-option,
+.mofa-action-button,
+.bot-profile-pick,
+.bot-preset-card button {
+  min-height: 44px;
+}
+
+.section-head.compact {
+  margin-bottom: 14px;
+}
+
+.section-head.compact .eyebrow {
+  margin-bottom: 5px;
+}
+
+.solo-bot-roster {
+  margin: 0 0 24px;
+  padding: clamp(18px, 2vw, 26px);
+}
+
+.solo-bot-seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 12px;
+}
+
+.solo-bot-seat {
+  min-width: 0;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 12px;
+  padding: 12px;
+  border: 1px solid rgba(215, 182, 102, 0.34);
+  border-radius: var(--radius-md);
+  background: rgba(11, 9, 13, 0.86);
+}
+
+.solo-bot-seat img {
+  grid-row: 1 / 3;
+  width: 54px;
+  height: 68px;
+  border: 1px solid rgba(215, 182, 102, 0.42);
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  object-position: top;
+}
+
+.solo-bot-seat span,
+.solo-bot-seat span strong,
+.solo-bot-seat span small {
+  display: block;
+  min-width: 0;
+}
+
+.solo-bot-seat span small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--paper-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.solo-bot-seat select {
+  grid-column: 2;
+  min-height: 48px;
+}
+
+.bot-manager-page {
+  width: min(1460px, calc(100vw - 34px));
+}
+
+.bot-manager-layout {
+  min-height: 700px;
+  display: grid;
+  grid-template-columns: minmax(250px, 310px) minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    var(--art-table) center / cover no-repeat,
+    rgba(7, 5, 8, 0.94);
+  box-shadow:
+    inset 0 0 0 999px rgba(7, 5, 8, 0.76),
+    var(--shadow-soft);
+}
+
+.bot-profile-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(215, 182, 102, 0.28);
+  background: rgba(6, 5, 7, 0.64);
+}
+
+.bot-profile-list > header,
+.bot-memory-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.bot-profile-list > header span,
+.bot-memory-panel > header span {
+  color: var(--paper-muted);
+}
+
+.bot-profile-pick {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(215, 182, 102, 0.28);
+  border-radius: var(--radius-md);
+  background: rgba(17, 14, 18, 0.86);
+  color: var(--paper);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bot-profile-pick:hover,
+.bot-profile-pick.selected {
+  border-color: var(--gold-bright);
+  background: rgba(62, 42, 27, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(215, 182, 102, 0.24);
+}
+
+.bot-profile-pick img {
+  width: 62px;
+  height: 72px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  object-position: top;
+}
+
+.bot-profile-pick span,
+.bot-profile-pick strong,
+.bot-profile-pick small,
+.bot-profile-pick em {
+  display: block;
+  min-width: 0;
+}
+
+.bot-profile-pick small {
+  margin: 4px 0;
+  color: var(--paper-dim);
+}
+
+.bot-profile-pick em {
+  color: var(--jade-bright);
+  font-size: 0.76rem;
+  font-style: normal;
+}
+
+.bot-profile-workspace {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.8fr);
+  align-items: start;
+  gap: 18px;
+  padding: clamp(18px, 2vw, 28px);
+}
+
+.bot-editor,
+.bot-data-panel {
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+
+.bot-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.bot-editor-heading .eyebrow {
+  margin-bottom: 4px;
+}
+
+.bot-level-badge {
+  min-width: 76px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--gold-bright);
+  background: rgba(50, 34, 24, 0.88);
+  font-weight: 800;
+}
+
+.bot-editor-grid {
+  margin: 0;
+}
+
+.bot-editor-wide textarea {
+  min-height: 94px;
+  resize: vertical;
+}
+
+.bot-thinking-toggle {
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid rgba(215, 182, 102, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(15, 12, 16, 0.7);
+}
+
+.bot-editor-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.danger-action {
+  border-color: rgba(229, 106, 85, 0.72);
+  color: #ffd8cf;
+}
+
+.bot-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bot-stat-grid article {
+  min-height: 110px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid rgba(215, 182, 102, 0.32);
+  border-radius: var(--radius-md);
+  background: rgba(14, 11, 15, 0.84);
+}
+
+.bot-stat-grid article span,
+.bot-stat-grid article small {
+  color: var(--paper-muted);
+}
+
+.bot-stat-grid article strong {
+  color: var(--gold-bright);
+  font-size: 1.3rem;
+}
+
+.bot-memory-panel {
+  min-height: 290px;
+  padding: 14px;
+  border: 1px solid rgba(215, 182, 102, 0.32);
+  border-radius: var(--radius-md);
+  background: rgba(14, 11, 15, 0.84);
+}
+
+.bot-memory-panel ol {
+  max-height: 360px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.bot-memory-panel li {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(215, 182, 102, 0.18);
+}
+
+.bot-memory-panel p {
+  margin: 0 0 5px;
+  line-height: 1.55;
+}
+
+.bot-memory-panel small {
+  color: var(--paper-muted);
+}
+
+.bot-empty-state {
+  grid-column: 1 / -1;
+  width: auto;
+  min-height: 360px;
+  padding: 30px;
+  place-self: center;
+  text-align: center;
+}
+
+.bot-preset-section {
+  margin-top: 30px;
+}
+
+.bot-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 14px;
+}
+
+.bot-preset-card {
+  min-height: 250px;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  grid-template-rows: 1fr auto;
+  gap: 12px 14px;
+  padding: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(215, 182, 102, 0.34);
+  border-radius: var(--radius-md);
+  background: rgba(14, 11, 15, 0.88);
+}
+
+.bot-preset-card > img {
+  grid-row: 1 / 3;
+  width: 92px;
+  height: 184px;
+  border: 1px solid rgba(215, 182, 102, 0.38);
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  object-position: top;
+}
+
+.bot-preset-card h4,
+.bot-preset-card p {
+  margin: 0;
+}
+
+.bot-preset-card h4 {
+  margin-bottom: 7px;
+  color: var(--gold-bright);
+  font-size: 1.18rem;
+}
+
+.bot-preset-card p:not(.eyebrow) {
+  color: var(--paper-dim);
+  line-height: 1.55;
+}
+
+.bot-preset-card span {
+  display: block;
+  margin-top: 9px;
+  color: var(--jade-bright);
+  font-size: 0.78rem;
+}
+
+.bot-preset-card button {
+  align-self: end;
+  width: 100%;
+}
+
+.table-screen,
+.mofa-table-screen {
+  grid-template-rows: minmax(0, 1fr) clamp(274px, 35vh, 330px);
+}
+
+.decision-sheet.is-negotiation {
+  grid-template-columns: minmax(420px, 1.25fr) minmax(360px, 0.75fr);
+}
+
+.negotiation-workspace {
+  min-width: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border-right: 1px solid rgba(215, 182, 102, 0.28);
+  background: rgba(7, 5, 8, 0.58);
+}
+
+.negotiation-workspace .chat-toolbar {
+  min-height: 54px;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(215, 182, 102, 0.18);
+}
+
+.chat-toolbar > span,
+.chat-toolbar > span strong,
+.chat-toolbar > span small {
+  display: block;
+}
+
+.chat-toolbar > span small {
+  margin-top: 3px;
+  color: var(--paper-muted);
+  font-size: 0.76rem;
+}
+
+.negotiation-workspace .quick-promises {
+  padding: 8px 12px;
+}
+
+.negotiation-workspace .event-log {
+  display: grid;
+  align-content: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.negotiation-workspace .event-log li {
+  min-height: 64px;
+  padding: 8px 10px;
+  border: 1px solid rgba(215, 182, 102, 0.2);
+  border-radius: var(--radius-sm);
+  background: rgba(12, 10, 13, 0.72);
+}
+
+.chat-input {
+  grid-template-columns: minmax(0, 1fr) minmax(104px, auto);
+}
+
+.chat-input input {
+  min-height: 48px;
+}
+
+.chat-input button {
+  padding-inline: 16px;
+}
+
+.mofa-calamity-card {
+  width: min(440px, 100%);
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+  background: rgba(11, 8, 12, 0.94);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.44);
+  text-align: left;
+}
+
+.mofa-calamity-art {
+  width: 112px;
+  aspect-ratio: 63 / 88;
+  border: 1px solid rgba(215, 182, 102, 0.54);
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+}
+
+.mofa-calamity-copy {
+  min-width: 0;
+}
+
+.mofa-equipment-chip {
+  grid-column: 1 / -1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 80px;
+  color: var(--jade-bright);
+  font-size: 0.7rem;
+}
+
+.mofa-equipment-chip img {
+  width: 24px;
+  height: 32px;
+  border-radius: 2px;
+  object-fit: cover;
+}
+
+.mofa-equipment-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mofa-fate-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.mofa-fate-summary img {
+  width: 32px;
+  height: 44px;
+  border-radius: 2px;
+  object-fit: cover;
+}
+
+.mofa-fate-summary span,
+.mofa-fate-summary strong,
+.mofa-fate-summary small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cards {
+  min-height: 102px;
+}
+
+.hand-card {
+  flex-basis: 188px;
+  min-height: 102px;
+  height: 102px;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 9px;
+  padding: 6px;
+}
+
+.hand-card > img {
+  width: 62px;
+  height: 88px;
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+.hand-card-copy {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.hand-card-copy > strong,
+.hand-card-copy > span,
+.hand-card-copy > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hand-card-copy > small {
+  -webkit-line-clamp: 2;
+}
+
+.mofa-plan-card {
+  grid-template-rows: minmax(74px, 1fr) 44px;
+}
+
+.plan-action-options {
+  gap: 5px;
+}
+
+.plan-action-options .plan-action-option {
+  min-height: 44px;
+  height: 44px;
+  padding: 7px 4px;
+  font-size: 0.76rem;
+}
+
+.mofa-action-dock:not(.is-secret-plan) .action-group:has(.mofa-card-action-grid) {
+  width: 100%;
+  flex: 1 1 100%;
+  max-width: none;
+}
+
+.mofa-card-action-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.mofa-response-action-list {
+  min-height: 0;
+  display: grid;
+  grid-auto-rows: minmax(54px, auto);
+  gap: 7px;
+  overflow-y: auto;
+}
+
+.mofa-card-action {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 7px;
+  padding: 7px;
+  overflow: hidden;
+  border: 1px solid rgba(215, 182, 102, 0.5);
+  border-radius: var(--radius-sm);
+  background: rgba(9, 7, 10, 0.92);
+  color: var(--paper);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mofa-card-action:hover,
+.mofa-card-action:focus-visible {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 28px rgba(215, 182, 102, 0.2);
+}
+
+.mofa-card-action img {
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  max-height: 190px;
+  aspect-ratio: 63 / 88;
+  border-radius: var(--radius-xs);
+  background: rgba(3, 3, 4, 0.9);
+  object-fit: contain;
+}
+
+.mofa-card-action span,
+.mofa-card-action strong,
+.mofa-card-action small {
+  display: block;
+  min-width: 0;
+}
+
+.mofa-card-action small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--paper-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1160px) {
+  .bot-profile-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .bot-data-panel {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+  }
+
+  .decision-sheet.is-negotiation {
+    grid-template-columns: 1fr;
+  }
+
+  .negotiation-workspace {
+    min-height: 360px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(215, 182, 102, 0.28);
+  }
+}
+
+@media (max-width: 820px) {
+  .bot-manager-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .bot-profile-list {
+    max-height: 360px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(215, 182, 102, 0.28);
+  }
+
+  .bot-data-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .bot-editor-actions,
+  .bot-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .negotiation-workspace .event-log {
+    grid-template-columns: 1fr;
+  }
+
+  .mofa-calamity-card {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .mofa-calamity-art {
+    width: 82px;
   }
 }

@@ -1,6 +1,6 @@
 # 发布验证报告
 
-验证环境：macOS arm64，Node `v24.1.0`，npm `11.18.0`，Chromium Headless Shell。规则数据固定为上游 `b7d214903fb10c7de20f399c3c5a7bf27d63cd0e`。
+验证环境：macOS arm64，Node `v24.1.0`，npm `11.18.0`，Safari 实机窗口。规则数据固定为上游 `b7d214903fb10c7de20f399c3c5a7bf27d63cd0e`。
 
 ## 自动化结果
 
@@ -9,12 +9,12 @@
 | `npm audit` | Last successful lock check: Pass | 0 vulnerabilities；本轮重试被 npm registry TLS 中断，依赖与 lockfile 未变化 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 5 files，62 tests |
+| `npm test` | Pass | 6 files，74 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
-| `npm run test:e2e` | Pass | Chromium 16/16；独立生产测试端口 8797 |
-| `npm run verify` | External retry needed | 本轮在 `npm audit` 的 npm registry TLS 握手中止；依赖未变化，余下门已按同序独立全绿 |
+| `npm run test:e2e` | Historical pass | Chromium 16/16；本轮按用户指定只做 Safari 视觉验收，未重跑 Playwright |
+| `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过 typecheck、lint、Vitest、模拟与构建；未重跑 `npm audit` / Playwright |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
 | `docker build` | Not run | Docker CLI 可用但本机 daemon 未启动 |
 
@@ -38,7 +38,16 @@ Playwright 覆盖：
 12. 教程与未结局状态下的结局路由。
 13. 1024×768、1280×720、1440×900、1920×1080 四档截图。
 
-截图位于 `docs/screenshots/`。常规 release 截图为 `menu-1024x768.png`、`tutorial-1280x720.png`、`table-1440x900.png`、`saves-1920x1080.png`；本轮额外保留 `art-v2-*.png` 作为美术优化目检证据。视觉复核确认页面非空、正文可读、主导航与核心动作可见，且人物头像、行动卡、规则图和中央仙台背景均已加载。Safari 实机还复核了环坛方案在普通响应窗口中的布局：单一响应居中，多目标动作区可纵向滚动，记录/会话抽屉关闭后不占用桌面。
+截图位于 `docs/screenshots/`。常规 release 截图为 `menu-1024x768.png`、`tutorial-1280x720.png`、`table-1440x900.png`、`saves-1920x1080.png`；本轮额外保留 `safari-*.jpg` 作为 Safari 实机证据。视觉复核确认页面非空、正文可读、主导航与核心动作可见，且人物头像、天劫牌、行动卡、探索机缘牌和中央仙台背景均已加载。
+
+本轮 Safari 连续试玩四轮，覆盖：
+
+1. 从 16 套预设创建三位长期 Bot，并把其中一位切换到 DeepSeek。
+2. 将三位长期 Bot 逐席加入服务端权威单人局。
+3. 在公开谈判中自由输入中文分工，收到 DeepSeek Bot 与本地 Bot 的公开回应；新消息会自动滚到可见区域。
+4. 秘密计划的 1–3 灵力按钮不小于 44px，四张行动卡与确认按钮保持同屏。
+5. 连续两次主动选择探索，第二次确认抽到的三张机缘以独立上游卡面横向展示并可直接点击保留。
+6. 返回 Bot 面板后确认 DeepSeek Bot 的决策、发言、经验、缓存命中、token、预估金额和四条公开记忆均已更新。
 
 ## 隐私与服务端权威
 
@@ -62,7 +71,9 @@ Playwright 覆盖：
 
 ## Provider 实测边界
 
-本轮环境未配置 `DEEPSEEK_API_KEY` 或 `OPENAI_COMPATIBLE_API_KEY`，因此没有产生真实计费请求。已验证无 Key 诊断、失败回退、合法动作约束、超时/重试/熔断代码路径与服务端密钥边界。上线前若配置 Key，应在目标网络执行一次 `/api/provider-test` 冒烟并确认模型名仍受官方 API 支持。
+本轮通过仅服务端读取的本地 `.env` 配置 DeepSeek，并完成真实最小请求：`deepseek-v4-flash` 返回合法 JSON 动作，未触发本地回退；延迟 1740ms，827 输入 tokens、34 输出 tokens、861 总 tokens，按当前价格估算为 126 USD micros。随后 Safari 实机对局验证了 DeepSeek 的公开中文回应、结构化决策、用量累计与跨局公开记忆。
+
+密钥没有进入浏览器、Git、截图、公开聊天或测试输出；本地 `.env` 被 `.gitignore` 排除并设为仅当前用户可读写。由于密钥曾由用户直接粘贴到会话中，完成验收后仍建议在 DeepSeek 控制台轮换。
 
 ## 已知平台提示
 

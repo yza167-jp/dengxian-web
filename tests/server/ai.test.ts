@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chooseAiMove, type AiMoveRequest } from '../../src/server/ai';
+import { chooseAiMove, createAiPublicChatReply, type AiMoveRequest } from '../../src/server/ai';
+import { estimateDeepSeekUsdMicros } from '../../src/server/providerPricing';
 import { createGame } from '../../src/shared/game/engine';
 import { getViewForSeat } from '../../src/shared/game/view';
 
@@ -52,7 +53,14 @@ function aiRequest(): AiMoveRequest {
 function providerResponse(message: {
   content?: string | null;
   tool_calls?: Array<{ function: { arguments: string } }>;
-}, usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }): Response {
+}, usage?: {
+  prompt_tokens?: number;
+  prompt_cache_hit_tokens?: number;
+  prompt_cache_miss_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  completion_tokens_details?: { reasoning_tokens?: number };
+}): Response {
   return new Response(JSON.stringify({ choices: [{ message }], usage }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
@@ -80,8 +88,12 @@ describe('AI provider validation and fallback', () => {
     const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
       expect(typeof init?.body).toBe('string');
       const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        thinking?: { type: string };
+        reasoning_effort?: string;
         tools: Array<{ function: { strict?: boolean; parameters: { properties: { actionId: { enum: string[] } } } } }>;
       };
+      expect(body.thinking).toEqual({ type: 'disabled' });
+      expect(body.reasoning_effort).toBeUndefined();
       expect(body.tools[0]!.function.strict).toBe(true);
       expect(body.tools[0]!.function.parameters.properties.actionId.enum).toContain(selected.id);
       return Promise.resolve(providerResponse({
@@ -92,8 +104,11 @@ describe('AI provider validation and fallback', () => {
         }],
       }, {
         prompt_tokens: 31,
+        prompt_cache_hit_tokens: 11,
+        prompt_cache_miss_tokens: 20,
         completion_tokens: 7,
         total_tokens: 38,
+        completion_tokens_details: { reasoning_tokens: 0 },
       }));
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -107,7 +122,15 @@ describe('AI provider validation and fallback', () => {
       model: 'deepseek-v4-flash',
       retryCount: 0,
       requestMode: 'tool',
-      tokenUsage: { promptTokens: 31, completionTokens: 7, totalTokens: 38 },
+      tokenUsage: {
+        promptTokens: 31,
+        promptCacheHitTokens: 11,
+        promptCacheMissTokens: 20,
+        completionTokens: 7,
+        totalTokens: 38,
+        reasoningTokens: 0,
+        estimatedCostUsdMicros: 5,
+      },
     });
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -119,6 +142,31 @@ describe('AI provider validation and fallback', () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(providerResponse({
       content: JSON.stringify({ actionId: selected.id, reasoning: 'JSON 选择。' }),
     }))));
+
+    const result = await chooseAiMove(request);
+    expect(result).toMatchObject({ actionId: selected.id, usedFallback: false });
+  });
+
+  it('enables DeepSeek thinking when the Bot profile requests it', async () => {
+    const request = aiRequest();
+    request.seatConfig.thinking = true;
+    const selected = request.legalActions[0]!;
+    const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        thinking?: { type: string };
+        reasoning_effort?: string;
+      };
+      expect(body.thinking).toEqual({ type: 'enabled' });
+      expect(body.reasoning_effort).toBe('high');
+      return Promise.resolve(providerResponse({
+        tool_calls: [{
+          function: {
+            arguments: JSON.stringify({ actionId: selected.id, reasoning: '困难模式选择。' }),
+          },
+        }],
+      }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const result = await chooseAiMove(request);
     expect(result).toMatchObject({ actionId: selected.id, usedFallback: false });
@@ -237,5 +285,82 @@ describe('AI provider validation and fallback', () => {
     expect(Date.now() - startedAt).toBeLessThan(250);
     expect(result.usedFallback).toBe(true);
     expect(request.legalActions.map((action) => action.id)).toContain(result.actionId);
+  });
+
+  it('returns a short public chat reply from public context only', async () => {
+    const request = aiRequest();
+    const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        messages: Array<{ role: string; content: string }>;
+        tools?: unknown;
+        thinking?: { type: string };
+        response_format?: { type: string };
+      };
+      expect(body.tools).toBeUndefined();
+      expect(body.thinking).toEqual({ type: 'disabled' });
+      expect(body.response_format).toEqual({ type: 'json_object' });
+      expect(JSON.stringify(body.messages)).toContain('publicContext');
+      expect(JSON.stringify(body.messages)).not.toContain('privateNotes');
+      return Promise.resolve(providerResponse({
+        content: JSON.stringify({ message: '我可以补主台两点，但下一轮需要有人接裂隙。' }),
+      }, {
+        prompt_tokens: 40,
+        prompt_cache_hit_tokens: 10,
+        prompt_cache_miss_tokens: 30,
+        completion_tokens: 12,
+        total_tokens: 52,
+      }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await createAiPublicChatReply({
+      seatConfig: request.seatConfig,
+      publicContext: { round: request.view.round, publicEvents: request.view.events.slice(-2) },
+      profile: 'steady persona memory',
+      maxChars: 40,
+    });
+
+    expect(result).toMatchObject({
+      message: '我可以补主台两点，但下一轮需要有人接裂隙。',
+      provider: 'deepseek',
+      usedFallback: false,
+      requestMode: 'json',
+    });
+    expect(result.tokenUsage?.estimatedCostUsdMicros).toBe(7);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('falls back locally for public chat without leaking private state', async () => {
+    delete process.env.DEEPSEEK_API_KEY;
+    const request = aiRequest();
+    const result = await createAiPublicChatReply({
+      seatConfig: request.seatConfig,
+      publicContext: { round: request.view.round },
+      profile: 'public preference only',
+      maxChars: 24,
+    });
+
+    expect(result).toMatchObject({
+      provider: 'local-bot',
+      usedFallback: true,
+      model: 'heuristic-v1',
+      requestMode: 'local',
+    });
+    expect(result.message.length).toBeLessThanOrEqual(24);
+    expect(JSON.stringify(result)).not.toContain('private');
+  });
+});
+
+describe('DeepSeek pricing', () => {
+  it('calculates deterministic USD micros and returns null for unknown models', () => {
+    expect(estimateDeepSeekUsdMicros('deepseek-v4-pro', {
+      promptCacheHitTokens: 1_000_000,
+      promptCacheMissTokens: 1_000_000,
+      completionTokens: 1_000_000,
+    })).toBe(1_308_625);
+    expect(estimateDeepSeekUsdMicros('custom-model', {
+      promptTokens: 100,
+      completionTokens: 50,
+    })).toBeNull();
   });
 });

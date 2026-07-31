@@ -146,6 +146,22 @@ describe('deterministic engine', () => {
     expect(restored.roundModifiers.effectiveContributors).toEqual([]);
   });
 
+  it('persists long-lived Bot profile references in states and replays', () => {
+    const initialConfig = config(4, 772);
+    initialConfig.seats[1]!.ai!.botProfileId = 'bot-profile-steady-altar';
+    const state = createGame(initialConfig);
+
+    expect(parseGameState(structuredClone(state)).players[1]!.ai?.botProfileId)
+      .toBe('bot-profile-steady-altar');
+    expect(rebuildReplay({
+      schemaVersion: 2,
+      upstreamCommit: state.upstreamCommit,
+      initialConfig,
+      actionIds: [],
+      finalStateHash: hashGameState(state),
+    }).players[1]!.ai?.botProfileId).toBe('bot-profile-steady-altar');
+  });
+
   it('rejects stale or fabricated actions', () => {
     const state = createGame(config());
     const activeSeat = state.window!.order[state.window!.cursor]!;

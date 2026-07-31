@@ -1,4 +1,5 @@
 import { io, type Socket } from 'socket.io-client';
+import type { BotPreset, BotProfileFields } from '../../shared/bots';
 import type { AiSeatConfig, GameView, PlayerKind, RoomId, SeatId } from '../../shared/game/types';
 
 export interface ProviderDiagnostic {
@@ -66,6 +67,53 @@ export interface SaveSummary {
   phaseLabel: string;
 }
 
+export interface BotProfile extends BotProfileFields {
+  id: string;
+  presetId: string;
+  isPreset: false;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BotGrowthStats {
+  level: number;
+  xp: number;
+  games: number;
+  ascensions: number;
+  decisions: number;
+  messages: number;
+  fallback: number;
+}
+
+export interface BotUsageAnalytics {
+  records: number;
+  cacheHits: number;
+  cacheMisses: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  latencyMsAvg: number;
+  retryCount: number;
+  fallback: number;
+  usdMicros: number;
+}
+
+export interface BotMemory {
+  id: string;
+  profileId: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface BotDashboard {
+  profile: BotProfile;
+  growth: BotGrowthStats;
+  usage: BotUsageAnalytics;
+  memories: BotMemory[];
+}
+
 export interface ServerCommandResult {
   view: GameView;
   accepted: boolean;
@@ -88,8 +136,8 @@ interface SocketAck<T> {
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
-    headers: { 'content-type': 'application/json', ...init?.headers },
     ...init,
+    headers: { 'content-type': 'application/json', ...init?.headers },
   });
   if (!response.ok) {
     const text = await response.text().catch(() => '');
@@ -106,6 +154,54 @@ export const clientApi = {
   async providers(): Promise<ProviderDiagnostic[]> {
     const response = await requestJson<{ providers: ProviderDiagnostic[] }>('/api/providers');
     return response.providers;
+  },
+
+  async botPresets(): Promise<readonly BotPreset[]> {
+    const response = await requestJson<{ presets: BotPreset[] }>('/api/bots/presets');
+    return response.presets;
+  },
+
+  async botProfiles(managerToken: string): Promise<BotProfile[]> {
+    const response = await requestJson<{ profiles: BotProfile[] }>('/api/bots', {
+      headers: { 'x-bot-manager-token': managerToken },
+    });
+    return response.profiles;
+  },
+
+  createBot(
+    managerToken: string,
+    input: { presetId: string; overrides?: Partial<BotProfileFields> },
+  ): Promise<{ profile: BotProfile }> {
+    return requestJson('/api/bots', {
+      method: 'POST',
+      headers: { 'x-bot-manager-token': managerToken },
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateBot(
+    managerToken: string,
+    profileId: string,
+    patch: Partial<BotProfileFields>,
+  ): Promise<{ profile: BotProfile }> {
+    return requestJson(`/api/bots/${encodeURIComponent(profileId)}`, {
+      method: 'PATCH',
+      headers: { 'x-bot-manager-token': managerToken },
+      body: JSON.stringify({ patch }),
+    });
+  },
+
+  deleteBot(managerToken: string, profileId: string): Promise<void> {
+    return requestJson(`/api/bots/${encodeURIComponent(profileId)}`, {
+      method: 'DELETE',
+      headers: { 'x-bot-manager-token': managerToken },
+    });
+  },
+
+  botDashboard(managerToken: string, profileId: string): Promise<BotDashboard> {
+    return requestJson(`/api/bots/${encodeURIComponent(profileId)}/dashboard`, {
+      headers: { 'x-bot-manager-token': managerToken },
+    });
   },
 
   async createRoom(input: { hostName: string; maxSeats: number; seed: number; characterId?: string }): Promise<ClientSession> {
@@ -132,7 +228,10 @@ export const clientApi = {
     return authedPost('/api/rooms/start', session);
   },
 
-  addBot(session: ClientSession, input: { name: string; ai: AiSeatConfig }): Promise<RoomSnapshot> {
+  addBot(
+    session: ClientSession,
+    input: { name: string; ai: AiSeatConfig; botManagerToken?: string },
+  ): Promise<RoomSnapshot> {
     return authedPost('/api/rooms/add-bot', session, input);
   },
 

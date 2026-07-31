@@ -53,4 +53,21 @@ describe('client api payload mapping', () => {
     expect(session.seatId).toBe('seat-2');
     expect(providers).toEqual([{ id: 'local-bot', label: '本地', status: 'available' }]);
   });
+
+  it('preserves JSON content type when authenticated Bot requests add custom headers', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ profile: { id: 'bot-1' } })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await clientApi.createBot('manager-token-that-is-long-enough-1234', { presetId: 'steady-altar-keeper' });
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/bots', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ presetId: 'steady-altar-keeper' }),
+    }));
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.headers).toEqual({
+      'content-type': 'application/json',
+      'x-bot-manager-token': 'manager-token-that-is-long-enough-1234',
+    });
+  });
 });

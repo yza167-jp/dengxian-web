@@ -11,7 +11,8 @@ import {
   OPPORTUNITY_BY_ID,
   RULES_DIGEST,
 } from '../../shared/data/content';
-import type { ActionChoice, CharacterId, GameAction, GameOutcome, GameView, PublicPlayerView } from '../../shared/game/types';
+import type { BotProfileFields } from '../../shared/bots';
+import type { ActionChoice, CharacterId, GameAction, GameOutcome, GameView, OpportunityId, PublicPlayerView } from '../../shared/game/types';
 import { ritualAudio } from '../audio/sound';
 import { useGameStore } from '../store/gameStore';
 
@@ -107,6 +108,17 @@ function actionArtPath(choice: ActionChoice): string {
   return ACTION_ART[choice];
 }
 
+function cardArtPath(cardId: string): string {
+  return `/assets/upstream/cards/${encodeURIComponent(cardId)}.webp`;
+}
+
+function actionCardId(action: GameAction): OpportunityId | null {
+  const candidate = action.payload.cardId ?? action.payload.recoveredCardId;
+  return typeof candidate === 'string' && /^(?:C|E)\d{2}$/.test(candidate)
+    ? candidate as OpportunityId
+    : null;
+}
+
 function isActionChoice(value: unknown): value is ActionChoice {
   return value === 'cultivate' || value === 'repair' || value === 'resist' || value === 'explore';
 }
@@ -138,6 +150,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         </Link>
         <nav className="main-nav" aria-label="主导航">
           <NavLink to="/solo">单人</NavLink>
+          <NavLink to="/bots">Bot 道友</NavLink>
           <NavLink to="/online">联机</NavLink>
           <NavLink to="/tutorial">规则</NavLink>
           <NavLink to="/saves">存档</NavLink>
@@ -177,6 +190,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<MainMenu />} />
         <Route path="/solo" element={<SoloSetup />} />
+        <Route path="/bots" element={<BotManager />} />
         <Route path="/online" element={<OnlineLobby />} />
         <Route path="/game" element={<GameTable />} />
         <Route path="/tutorial" element={<Tutorial />} />
@@ -273,6 +287,7 @@ function MainMenu() {
             重连在线席位
           </button>
           <Link className="secondary-action" to="/online">加入在线房间</Link>
+          <Link className="secondary-action" to="/bots">管理长期 Bot 道友</Link>
           <Link className="secondary-action" to="/tutorial">查看规则</Link>
           <Link className="secondary-action" to="/credits">制作人员与许可</Link>
         </div>
@@ -300,8 +315,13 @@ function MainMenu() {
 function SoloSetup() {
   const navigate = useNavigate();
   const setup = useGameStore((state) => state.setup);
+  const botProfiles = useGameStore((state) => state.botProfiles);
+  const refreshBots = useGameStore((state) => state.refreshBots);
   const updateSetup = useGameStore((state) => state.updateSetup);
   const startSolo = useGameStore((state) => state.startSolo);
+  useEffect(() => {
+    void refreshBots();
+  }, [refreshBots]);
   return (
     <section className="panel-page">
       <div className="section-head">
@@ -370,6 +390,55 @@ function SoloSetup() {
           </select>
         </label>
       </div>
+      <section className="rule-card solo-bot-roster" aria-labelledby="solo-bot-roster-title">
+        <div className="section-head compact">
+          <p className="eyebrow">逐席配置</p>
+          <h3 id="solo-bot-roster-title">本局同行的 Bot 道友</h3>
+        </div>
+        <p className="rules-digest">
+          选择已创建的长期 Bot 后，它会携带人设与跨局记忆入局，并累计成长与调用消费；留空则使用上方统一配置。
+        </p>
+        <div className="solo-bot-seat-grid">
+          {Array.from({ length: setup.playerCount - 1 }, (_, index) => {
+            const profileId = setup.botProfileIds[index] ?? '';
+            const profile = botProfiles.find((candidate) => candidate.id === profileId);
+            return (
+              <label key={index} className="solo-bot-seat">
+                <img
+                  src={characterPortraitPath(CHARACTERS[(index + 1) % CHARACTERS.length]!.id)}
+                  alt=""
+                  aria-hidden="true"
+                />
+                <span>
+                  <strong>第 {index + 2} 席</strong>
+                  <small>{profile ? `${profile.title} · ${profile.provider}` : '使用本局统一 AI 配置'}</small>
+                </span>
+                <select
+                  aria-label={`第 ${index + 2} 席 Bot`}
+                  value={profileId}
+                  onChange={(event) => {
+                    const next = [...setup.botProfileIds];
+                    next[index] = event.target.value;
+                    updateSetup({ botProfileIds: next });
+                  }}
+                >
+                  <option value="">临时 Bot</option>
+                  {botProfiles.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.name} · {candidate.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          })}
+        </div>
+        <div className="hero-actions">
+          <Link className="secondary-action" to="/bots">
+            {botProfiles.length > 0 ? '查看与编辑 Bot 道友' : '从 16 套预设创建 Bot'}
+          </Link>
+        </div>
+      </section>
       <section className="rule-card mofa-character-gallery" aria-label="上游人物卡预览">
         <h3>七名修士人物卡</h3>
         <p className="rules-digest">可在上方指定自己的角色；选择“随机分配”时按固定 seed 洗牌。外部 Provider 通过服务端权威私房运行，失败会自动回退本地 Bot。</p>
@@ -407,12 +476,272 @@ function SoloSetup() {
   );
 }
 
+function BotManager() {
+  const botPresets = useGameStore((state) => state.botPresets);
+  const botProfiles = useGameStore((state) => state.botProfiles);
+  const botDashboard = useGameStore((state) => state.botDashboard);
+  const refreshBots = useGameStore((state) => state.refreshBots);
+  const createBot = useGameStore((state) => state.createBot);
+  const updateBot = useGameStore((state) => state.updateBot);
+  const deleteBot = useGameStore((state) => state.deleteBot);
+  const loadBotDashboard = useGameStore((state) => state.loadBotDashboard);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<BotProfileFields | null>(null);
+  const [pendingDelete, setPendingDelete] = useState(false);
+
+  useEffect(() => {
+    void refreshBots();
+  }, [refreshBots]);
+  useEffect(() => {
+    if (!selectedId && botProfiles[0]) setSelectedId(botProfiles[0].id);
+    if (selectedId && !botProfiles.some((profile) => profile.id === selectedId)) {
+      setSelectedId(botProfiles[0]?.id ?? null);
+    }
+  }, [botProfiles, selectedId]);
+  useEffect(() => {
+    const profile = botProfiles.find((candidate) => candidate.id === selectedId);
+    setDraft(profile ? {
+      name: profile.name,
+      title: profile.title,
+      description: profile.description,
+      provider: profile.provider,
+      model: profile.model,
+      difficulty: profile.difficulty,
+      persona: profile.persona,
+      thinking: profile.thinking,
+      traits: [...profile.traits],
+      preferences: [...profile.preferences],
+      communicationStyle: profile.communicationStyle,
+    } : null);
+    setPendingDelete(false);
+    if (profile) void loadBotDashboard(profile.id);
+  }, [botProfiles, loadBotDashboard, selectedId]);
+
+  const selectedProfile = botProfiles.find((profile) => profile.id === selectedId) ?? null;
+  const updateDraft = <K extends keyof BotProfileFields>(key: K, value: BotProfileFields[K]) => {
+    setDraft((current) => current ? { ...current, [key]: value } : current);
+  };
+  const dollars = botDashboard ? botDashboard.usage.usdMicros / 1_000_000 : 0;
+
+  return (
+    <section className="panel-page bot-manager-page">
+      <div className="section-head">
+        <p className="eyebrow">跨对局 AI 名册</p>
+        <h2>Bot 道友管理</h2>
+      </div>
+      <p className="rules-digest">
+        每位道友保留独立人设、偏好、公开记忆、成长与调用消费。浏览器只保存随机管理令牌，API Key 始终留在服务端。
+      </p>
+
+      <section className="bot-manager-layout" aria-label="Bot 名册与编辑器">
+        <aside className="bot-profile-list" aria-label="已创建 Bot">
+          <header>
+            <strong>我的道友</strong>
+            <span>{botProfiles.length} 位</span>
+          </header>
+          {botProfiles.length === 0 ? (
+            <p className="info-strip">尚未创建长期 Bot。可从下方 16 套预设一键创建。</p>
+          ) : null}
+          {botProfiles.map((profile, index) => (
+            <button
+              key={profile.id}
+              type="button"
+              className={profile.id === selectedId ? 'bot-profile-pick selected' : 'bot-profile-pick'}
+              onClick={() => setSelectedId(profile.id)}
+            >
+              <img
+                src={characterPortraitPath(CHARACTERS[index % CHARACTERS.length]!.id)}
+                alt=""
+                aria-hidden="true"
+              />
+              <span>
+                <strong>{profile.name}</strong>
+                <small>{profile.title}</small>
+                <em>{profile.provider} · {profile.difficulty}</em>
+              </span>
+            </button>
+          ))}
+        </aside>
+
+        <div className="bot-profile-workspace">
+          {draft && selectedProfile ? (
+            <>
+              <form
+                className="bot-editor"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void updateBot(selectedProfile.id, draft);
+                }}
+              >
+                <div className="bot-editor-heading">
+                  <div>
+                    <p className="eyebrow">人设与策略</p>
+                    <h3>{selectedProfile.name}</h3>
+                  </div>
+                  <span className="bot-level-badge">Lv.{botDashboard?.growth.level ?? 1}</span>
+                </div>
+                <div className="setup-grid bot-editor-grid">
+                  <label>名字<input value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} /></label>
+                  <label>称号<input value={draft.title} onChange={(event) => updateDraft('title', event.target.value)} /></label>
+                  <label>
+                    Provider
+                    <select value={draft.provider} onChange={(event) => updateDraft('provider', event.target.value as BotProfileFields['provider'])}>
+                      <option value="local-bot">本地启发式</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="openai-compatible">OpenAI-compatible</option>
+                    </select>
+                  </label>
+                  <label>
+                    模型
+                    <input
+                      value={draft.model ?? ''}
+                      onChange={(event) => updateDraft('model', event.target.value || null)}
+                      disabled={draft.provider === 'local-bot'}
+                      placeholder="留空使用服务端默认"
+                    />
+                  </label>
+                  <label>
+                    难度
+                    <select value={draft.difficulty} onChange={(event) => updateDraft('difficulty', event.target.value as BotProfileFields['difficulty'])}>
+                      <option value="easy">入门</option>
+                      <option value="normal">标准</option>
+                      <option value="hard">强硬</option>
+                    </select>
+                  </label>
+                  <label>
+                    核心性格
+                    <select value={draft.persona} onChange={(event) => updateDraft('persona', event.target.value as BotProfileFields['persona'])}>
+                      <option value="steady">稳健</option>
+                      <option value="guardian">护台</option>
+                      <option value="bold">激进</option>
+                      <option value="suspicious">多疑</option>
+                      <option value="selfish">自利</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="bot-editor-wide">
+                  人设说明
+                  <textarea value={draft.description} onChange={(event) => updateDraft('description', event.target.value)} />
+                </label>
+                <label className="bot-editor-wide">
+                  性格标签（逗号分隔）
+                  <input
+                    value={draft.traits.join('，')}
+                    onChange={(event) => updateDraft('traits', event.target.value.split(/[，,]/).map((item) => item.trim()).filter(Boolean))}
+                  />
+                </label>
+                <label className="bot-editor-wide">
+                  偏好（逗号分隔）
+                  <input
+                    value={draft.preferences.join('，')}
+                    onChange={(event) => updateDraft('preferences', event.target.value.split(/[，,]/).map((item) => item.trim()).filter(Boolean))}
+                  />
+                </label>
+                <label className="bot-editor-wide">
+                  沟通风格
+                  <textarea value={draft.communicationStyle} onChange={(event) => updateDraft('communicationStyle', event.target.value)} />
+                </label>
+                <label className="toggle-line bot-thinking-toggle">
+                  <input type="checkbox" checked={draft.thinking} onChange={(event) => updateDraft('thinking', event.target.checked)} />
+                  困难决策启用思考模式
+                </label>
+                <div className="bot-editor-actions">
+                  <button className="primary-action" type="submit">保存全部设定</button>
+                  {!pendingDelete ? (
+                    <button className="secondary-action danger-action" type="button" onClick={() => setPendingDelete(true)}>删除这位 Bot</button>
+                  ) : (
+                    <button
+                      className="primary-action danger-action"
+                      type="button"
+                      onClick={() => {
+                        void deleteBot(selectedProfile.id).then((deleted) => {
+                          if (deleted) setSelectedId(null);
+                        });
+                      }}
+                    >
+                      确认删除“{selectedProfile.name}”
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              <section className="bot-data-panel" aria-label="Bot 成长与消费">
+                <div className="bot-stat-grid">
+                  <article><span>等级 / 经验</span><strong>Lv.{botDashboard?.growth.level ?? 1}</strong><small>{botDashboard?.growth.xp ?? 0} XP</small></article>
+                  <article><span>完成对局</span><strong>{botDashboard?.growth.games ?? 0}</strong><small>飞升 {botDashboard?.growth.ascensions ?? 0}</small></article>
+                  <article><span>决策 / 发言</span><strong>{botDashboard?.growth.decisions ?? 0}</strong><small>{botDashboard?.growth.messages ?? 0} 条公开发言</small></article>
+                  <article><span>预估消费</span><strong>${dollars.toFixed(6)}</strong><small>{botDashboard?.usage.totalTokens.toLocaleString('zh-CN') ?? 0} tokens</small></article>
+                  <article><span>缓存命中</span><strong>{botDashboard?.usage.cacheHits ?? 0}</strong><small>未命中 {botDashboard?.usage.cacheMisses ?? 0}</small></article>
+                  <article><span>回退 / 重试</span><strong>{botDashboard?.usage.fallback ?? 0}</strong><small>重试 {botDashboard?.usage.retryCount ?? 0}</small></article>
+                </div>
+                <div className="bot-memory-panel">
+                  <header><strong>跨对局公开记忆</strong><span>最近 {botDashboard?.memories.length ?? 0} 条</span></header>
+                  {botDashboard?.memories.length ? (
+                    <ol>
+                      {botDashboard.memories.map((memory) => (
+                        <li key={memory.id}>
+                          <p>{memory.content}</p>
+                          <small>{new Date(memory.createdAt).toLocaleString('zh-CN')}</small>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : <p className="info-strip">完成一局或参与公开谈判后，这里会形成不含其他玩家私密信息的摘要。</p>}
+                </div>
+              </section>
+            </>
+          ) : (
+            <div className="empty-state bot-empty-state">
+              <h3>从预设唤醒第一位 Bot 道友</h3>
+              <p>预设创建后仍可完整修改名字、人设、性格、偏好、模型与沟通风格。</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="bot-preset-section" aria-labelledby="bot-preset-title">
+        <div className="section-head compact">
+          <p className="eyebrow">快速创建</p>
+          <h3 id="bot-preset-title">16 套可编辑预设</h3>
+        </div>
+        <div className="bot-preset-grid">
+          {botPresets.map((preset, index) => (
+            <article key={preset.id} className="bot-preset-card">
+              <img
+                src={characterCardPath(CHARACTERS[index % CHARACTERS.length]!.id)}
+                alt=""
+                aria-hidden="true"
+              />
+              <div>
+                <p className="eyebrow">{preset.title}</p>
+                <h4>{preset.name}</h4>
+                <p>{preset.description}</p>
+                <span>{preset.traits.join(' · ')}</span>
+              </div>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={() => void createBot(preset.id).then((profile) => {
+                  if (profile) setSelectedId(profile.id);
+                })}
+              >
+                创建并编辑
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 function OnlineLobby() {
   const navigate = useNavigate();
   const room = useGameStore((state) => state.room);
   const view = useGameStore((state) => state.view);
   const session = useGameStore((state) => state.session);
   const setup = useGameStore((state) => state.setup);
+  const botProfiles = useGameStore((state) => state.botProfiles);
+  const refreshBots = useGameStore((state) => state.refreshBots);
   const updateSetup = useGameStore((state) => state.updateSetup);
   const createOnline = useGameStore((state) => state.createOnline);
   const joinOnline = useGameStore((state) => state.joinOnline);
@@ -429,9 +758,13 @@ function OnlineLobby() {
   const [botModel, setBotModel] = useState('');
   const [botDifficulty, setBotDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal');
   const [botPersona, setBotPersona] = useState<'steady' | 'bold' | 'suspicious' | 'selfish' | 'guardian'>('steady');
+  const [botProfileId, setBotProfileId] = useState('');
   const shareLink = room ? `${window.location.origin}/online?code=${encodeURIComponent(room.code)}` : '';
   const self = room?.seats.find((seat) => seat.id === session?.seatId);
   const isHost = Boolean(room && session && room.hostSeatId === session.seatId);
+  useEffect(() => {
+    void refreshBots();
+  }, [refreshBots]);
   useEffect(() => {
     if (view && room?.status !== 'lobby') navigate(view.outcome ? '/outcome' : '/game');
   }, [navigate, room?.status, view]);
@@ -492,8 +825,17 @@ function OnlineLobby() {
           {isHost ? (
             <div className="setup-grid" aria-label="AI 席位配置">
               <label>
+                长期 Bot 道友
+                <select value={botProfileId} onChange={(event) => setBotProfileId(event.target.value)}>
+                  <option value="">临时 Bot（使用下方配置）</option>
+                  {botProfiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.name} · {profile.title}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 Provider
-                <select value={botProvider} onChange={(event) => setBotProvider(event.target.value as typeof botProvider)}>
+                <select disabled={Boolean(botProfileId)} value={botProvider} onChange={(event) => setBotProvider(event.target.value as typeof botProvider)}>
                   <option value="local-bot">本地启发式 Bot</option>
                   <option value="deepseek">DeepSeek</option>
                   <option value="openai-compatible">OpenAI-compatible</option>
@@ -501,11 +843,11 @@ function OnlineLobby() {
               </label>
               <label>
                 模型
-                <input value={botModel} onChange={(event) => setBotModel(event.target.value)} placeholder="留空使用服务端默认" disabled={botProvider === 'local-bot'} />
+                <input value={botModel} onChange={(event) => setBotModel(event.target.value)} placeholder="留空使用服务端默认" disabled={Boolean(botProfileId) || botProvider === 'local-bot'} />
               </label>
               <label>
                 难度
-                <select value={botDifficulty} onChange={(event) => setBotDifficulty(event.target.value as typeof botDifficulty)}>
+                <select disabled={Boolean(botProfileId)} value={botDifficulty} onChange={(event) => setBotDifficulty(event.target.value as typeof botDifficulty)}>
                   <option value="easy">简单</option>
                   <option value="normal">普通</option>
                   <option value="hard">困难 / 思考</option>
@@ -513,7 +855,7 @@ function OnlineLobby() {
               </label>
               <label>
                 性格
-                <select value={botPersona} onChange={(event) => setBotPersona(event.target.value as typeof botPersona)}>
+                <select disabled={Boolean(botProfileId)} value={botPersona} onChange={(event) => setBotPersona(event.target.value as typeof botPersona)}>
                   <option value="steady">稳健</option>
                   <option value="guardian">守台</option>
                   <option value="bold">激进</option>
@@ -529,13 +871,23 @@ function OnlineLobby() {
               <button
                 className="secondary-action"
                 type="button"
-                onClick={() => void addBot({
-                  provider: botProvider,
-                  model: botModel.trim() || undefined,
-                  difficulty: botDifficulty,
-                  persona: botPersona,
-                  thinking: botDifficulty === 'hard',
-                })}
+                onClick={() => {
+                  const profile = botProfiles.find((candidate) => candidate.id === botProfileId);
+                  void addBot(profile ? {
+                    provider: profile.provider,
+                    model: profile.model ?? undefined,
+                    difficulty: profile.difficulty,
+                    persona: profile.persona,
+                    thinking: profile.thinking,
+                    botProfileId: profile.id,
+                  } : {
+                    provider: botProvider,
+                    model: botModel.trim() || undefined,
+                    difficulty: botDifficulty,
+                    persona: botPersona,
+                    thinking: botDifficulty === 'hard',
+                  });
+                }}
               >
                 添加 AI
               </button>
@@ -595,8 +947,8 @@ function GameTable() {
         <CenterAltar view={view} actionDeadlineAt={actionDeadlineAt} />
         <Scoreboard view={view} />
       </section>
-      <section className="decision-sheet" aria-label="本轮决策">
-        <PlayerHand view={view} />
+      <section className={`decision-sheet${view.phase === 'negotiation' ? ' is-negotiation' : ''}`} aria-label="本轮决策">
+        {view.phase === 'negotiation' ? <ChatPanel embedded /> : <PlayerHand view={view} />}
         <ActionDock actions={view.legalActions} phaseLabel={view.phaseLabel} />
       </section>
       <button
@@ -684,6 +1036,12 @@ function PlayerToken({ player, active, position }: { player: PublicPlayerView; a
         <dt>德</dt><dd>{player.merit}</dd>
         <dt>手</dt><dd>{player.handCount}</dd>
       </dl>
+      {player.equipment ? (
+        <span className="mofa-equipment-chip" title={OPPORTUNITY_BY_ID.get(player.equipment)?.name ?? player.equipment}>
+          <img src={cardArtPath(player.equipment)} alt="" aria-hidden="true" loading="lazy" />
+          <span>{OPPORTUNITY_BY_ID.get(player.equipment)?.name ?? player.equipment}</span>
+        </span>
+      ) : null}
       {revealedChoice ? (
         <span
           className="lock locked"
@@ -738,12 +1096,20 @@ function CenterAltar({ view, actionDeadlineAt }: { view: GameView; actionDeadlin
         <article
           className="calamity-card zoomable mofa-calamity-card"
           tabIndex={0}
-          style={artVariable('--calamity-art', ALTAR_ART)}
+          style={artVariable('--calamity-art', cardArtPath(view.currentCalamity))}
         >
+          <img
+            src={cardArtPath(view.currentCalamity)}
+            alt={`${calamity?.name ?? view.currentCalamity} 天劫牌`}
+            loading="eager"
+            className="mofa-calamity-art"
+          />
+          <div className="mofa-calamity-copy">
           <p className="eyebrow">{calamity?.stage ?? '天劫'}</p>
           <h2>{calamity?.name ?? view.currentCalamity}</h2>
           <p>{calamity?.effect ?? '等待天劫揭示。'}</p>
           <small>抗劫需求 {view.currentDemand}</small>
+          </div>
         </article>
         <div className="platform-meter" aria-label="登仙台进度">
           <div className="main-progress">
@@ -802,8 +1168,13 @@ function PlayerHand({ view }: { view: GameView }) {
               <div><dt>手</dt><dd>{selfPlayer.handCount}</dd></div>
             </dl>
           ) : null}
-          <strong>{fate?.name ?? '无私有天命'}</strong>
-          <small>{fate ? `${fate.mainFate} · ${fate.obsession}` : '当前没有私有目标'}</small>
+          <div className="mofa-fate-summary">
+            {view.self ? <img src={cardArtPath(view.self.fateId)} alt="" aria-hidden="true" loading="lazy" /> : null}
+            <span>
+              <strong>{fate?.name ?? '无私有天命'}</strong>
+              <small>{fate ? `${fate.mainFate} · ${fate.obsession}` : '当前没有私有目标'}</small>
+            </span>
+          </div>
         </div>
       </article>
       {hand.length > 0 ? (
@@ -818,9 +1189,12 @@ function PlayerHand({ view }: { view: GameView }) {
                 onClick={() => selectCard(selectedCardId === cardId ? null : cardId)}
                 aria-pressed={selectedCardId === cardId}
               >
-                <strong>{card?.name ?? cardId}</strong>
-                <span>{card?.type ?? '机缘'}</span>
-                <small>{card?.effect ?? '未知效果'}</small>
+                <img src={cardArtPath(cardId)} alt={`${card?.name ?? cardId}卡面`} loading="lazy" />
+                <span className="hand-card-copy">
+                  <strong>{card?.name ?? cardId}</strong>
+                  <span>{card?.type ?? '机缘'}</span>
+                  <small>{card?.effect ?? '未知效果'}</small>
+                </span>
               </button>
             );
           })}
@@ -837,7 +1211,7 @@ function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel
     (acc[action.type] ??= []).push(action);
     return acc;
   }, {}), [actions]);
-  const isSecretPlan = actions.length > 0 && actions.every((action) => actionChoiceFromAction(action));
+  const isSecretPlan = actions.length > 0 && actions.every((action) => action.type === 'SUBMIT_PLAN');
   const actionGroups = useMemo(() => {
     if (!isSecretPlan) return Object.entries(grouped);
     return ACTION_ORDER.flatMap((choice) => {
@@ -902,31 +1276,53 @@ function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel
                 </div>
               </article>
             ) : (
-              list.slice(0, 18).map((action) => {
-                const choice = actionChoiceFromAction(action);
-                return (
-                  <button
-                    key={action.id}
-                    className={choice ? 'mofa-action-button has-action-art' : 'mofa-action-button'}
-                    data-action-choice={choice ?? undefined}
-                    type="button"
-                    onClick={() => performAction(action)}
-                    aria-label={`${action.label}：${action.description}`}
-                    style={choice ? artVariable('--action-art', actionArtPath(choice)) : undefined}
-                  >
-                    {choice ? (
-                      <img
-                        src={actionArtPath(choice)}
-                        alt={`${ACTION_NAMES[choice]}行动图`}
-                        loading="lazy"
-                        className="mofa-action-art"
-                      />
-                    ) : null}
-                    <strong>{action.label}</strong>
-                    <small>{action.description}</small>
-                  </button>
-                );
-              })
+              <div className={list.some((action) => actionCardId(action)) ? 'mofa-card-action-grid' : 'mofa-response-action-list'}>
+                {list.slice(0, 18).map((action) => {
+                  const choice = actionChoiceFromAction(action);
+                  const cardId = actionCardId(action);
+                  if (cardId) {
+                    const card = OPPORTUNITY_BY_ID.get(cardId);
+                    return (
+                      <button
+                        key={action.id}
+                        className="mofa-card-action"
+                        data-card-id={cardId}
+                        type="button"
+                        onClick={() => performAction(action)}
+                        aria-label={`${action.label}：${action.description}`}
+                      >
+                        <img src={cardArtPath(cardId)} alt={`${card?.name ?? cardId}卡面`} loading="eager" />
+                        <span>
+                          <strong>{card?.name ?? cardId}</strong>
+                          <small>{action.label}</small>
+                        </span>
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      key={action.id}
+                      className={choice ? 'mofa-action-button has-action-art' : 'mofa-action-button'}
+                      data-action-choice={choice ?? undefined}
+                      type="button"
+                      onClick={() => performAction(action)}
+                      aria-label={`${action.label}：${action.description}`}
+                      style={choice ? artVariable('--action-art', actionArtPath(choice)) : undefined}
+                    >
+                      {choice ? (
+                        <img
+                          src={actionArtPath(choice)}
+                          alt={`${ACTION_NAMES[choice]}行动图`}
+                          loading="lazy"
+                          className="mofa-action-art"
+                        />
+                      ) : null}
+                      <strong>{action.label}</strong>
+                      <small>{action.description}</small>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
         ))}
@@ -961,35 +1357,41 @@ function EventLog({ view }: { view: GameView }) {
   );
 }
 
-function ChatPanel() {
+function ChatPanel({ embedded = false }: { embedded?: boolean }) {
   const chat = useGameStore((state) => state.chat);
   const session = useGameStore((state) => state.session);
   const chatMuted = useGameStore((state) => state.chatMuted);
   const setChatMuted = useGameStore((state) => state.setChatMuted);
   const sendChat = useGameStore((state) => state.sendChat);
   const [text, setText] = useState('');
+  const chatLogRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const log = chatLogRef.current;
+    if (log) log.scrollTop = log.scrollHeight;
+  }, [chat]);
   const submit = (message: string) => {
     sendChat(message);
     setText('');
   };
   return (
-    <div className="chat-panel">
+    <div className={embedded ? 'chat-panel negotiation-workspace' : 'chat-panel'}>
       <div className="chat-toolbar">
-        <strong>{session ? '公开谈判' : 'Bot 公开发言'}</strong>
+        <span>
+          <strong>公开谈判</strong>
+          <small>{session ? 'Bot 将根据公开局势直接回应' : '离线 Bot 使用本地人设模板直接回应'}</small>
+        </span>
         <label className="toggle-line">
           <input type="checkbox" checked={chatMuted} onChange={(event) => setChatMuted(event.target.checked)} />
           屏蔽聊天
         </label>
       </div>
-      {session ? (
-        <div className="quick-promises">
-          {['本轮我抗劫', '优先补主台', '我需要探索', '准备启动'].map((promise) => <button key={promise} type="button" onClick={() => submit(promise)}>{promise}</button>)}
-        </div>
-      ) : null}
+      <div className="quick-promises">
+        {['本轮我抗劫', '优先补主台', '我需要探索', '谁愿意合作？'].map((promise) => <button key={promise} type="button" onClick={() => submit(promise)}>{promise}</button>)}
+      </div>
       {chatMuted ? (
         <p className="info-strip">聊天已屏蔽；共 {chat.length} 条公开消息。</p>
       ) : (
-        <ol className="event-log">
+        <ol ref={chatLogRef} className="event-log">
           {chat.map((message) => (
             <li key={message.id}>
               <span>
@@ -1003,20 +1405,16 @@ function ChatPanel() {
           ))}
         </ol>
       )}
-      {session ? (
-        <form
-          className="chat-input"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(text);
-          }}
-        >
-          <input aria-label="聊天输入" placeholder="输入公开谈判消息" maxLength={120} value={text} onChange={(event) => setText(event.target.value)} />
-          <button type="submit">发送</button>
-        </form>
-      ) : (
-        <p className="info-strip">离线单人局不上传真人消息；本地 Bot 会在这里留下不含私密信息的模板化发言。</p>
-      )}
+      <form
+        className="chat-input"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit(text);
+        }}
+      >
+        <input aria-label="聊天输入" placeholder="直接对 Bot 们公开发言…" maxLength={240} value={text} onChange={(event) => setText(event.target.value)} />
+        <button type="submit" disabled={!text.trim()}>发送发言</button>
+      </form>
     </div>
   );
 }

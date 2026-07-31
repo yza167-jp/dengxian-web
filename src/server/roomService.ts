@@ -10,7 +10,8 @@ import { chooseHeuristicAction, publicBotMessage } from '../shared/game/bot';
 import { hashGameState } from '../shared/game/replay';
 import { getViewForSeat } from '../shared/game/view';
 import type { AiSeatConfig, CharacterId, CreateGameConfig, GameState, GameView, PlayerKind, SeatId } from '../shared/game/types';
-import { chooseAiMove } from './ai';
+import { chooseAiMove, createAiPublicChatReply, type AiTokenUsage } from './ai';
+import { BotService, type StoredBotProfile } from './botService';
 import { newId, newToken, sha256 } from './storage';
 import type { ServerStorage } from './storage';
 
@@ -25,6 +26,8 @@ export interface RoomSeat {
   tokenHash: string;
   tokenExpiresAt?: string;
   ai?: AiSeatConfig;
+  botProfile?: StoredBotProfile;
+  botMemories?: string[];
   characterId?: CharacterId;
 }
 
@@ -43,11 +46,19 @@ export interface RoomPayload {
   chat: Array<{ id: string; seatId: SeatId; name: string; message: string; createdAt: string; round?: number }>;
   actionDeadlineAt?: string;
   actionDeadlineRevision?: number;
+  botGrowthFinalized?: boolean;
 }
 
 export interface SeatAuth {
   room: RoomPayload;
   seat: RoomSeat;
+}
+
+interface RoomServiceOptions {
+  now?: () => number;
+  actionTimeoutMs?: number;
+  sessionTokenTtlDays?: number;
+  log?: (event: Record<string, unknown>) => void;
 }
 
 function restorePersistedGameState(room: RoomPayload): { state: GameState; repairedCharacters: boolean } {
@@ -146,22 +157,39 @@ function nextAvailableSeatId(room: RoomPayload): SeatId {
   throw new Error('Room is full');
 }
 
+function profilePrompt(seat: RoomSeat): string | undefined {
+  if (!seat.botProfile) return undefined;
+  const profile = seat.botProfile;
+  const memories = seat.botMemories?.slice(0, 12) ?? [];
+  return [
+    `${profile.name}，${profile.title}。${profile.description}`,
+    `性格：${profile.traits.join('、') || '未设置'}。`,
+    `偏好：${profile.preferences.join('、') || '未设置'}。`,
+    `沟通：${profile.communicationStyle}`,
+    memories.length > 0 ? `仅公开信息形成的既往记忆：${memories.join('；')}` : '',
+  ].filter(Boolean).join('\n').slice(0, 1_800);
+}
+
+function usageInputTokens(usage: AiTokenUsage | undefined): number {
+  return usage?.promptTokens
+    ?? (usage?.promptCacheHitTokens ?? 0) + (usage?.promptCacheMissTokens ?? 0);
+}
+
 export class RoomService {
   private readonly botQueues = new Map<string, Promise<RoomPayload>>();
   private readonly now: () => number;
   private readonly actionTimeoutMs: number;
   private readonly sessionTokenTtlMs: number;
   private readonly log: (event: Record<string, unknown>) => void;
+  private readonly bots: BotService;
 
   constructor(
     private readonly storage: ServerStorage,
-    options: {
-      now?: () => number;
-      actionTimeoutMs?: number;
-      sessionTokenTtlDays?: number;
-      log?: (event: Record<string, unknown>) => void;
-    } = {},
+    botsOrOptions: BotService | RoomServiceOptions = {},
+    explicitOptions: RoomServiceOptions = {},
   ) {
+    const options = botsOrOptions instanceof BotService ? explicitOptions : botsOrOptions;
+    this.bots = botsOrOptions instanceof BotService ? botsOrOptions : new BotService(storage);
     this.now = options.now ?? Date.now;
     this.actionTimeoutMs = Math.max(
       1,
@@ -293,21 +321,43 @@ export class RoomService {
     this.save(room, 'seat_disconnected', { seatId });
   }
 
-  addBot(input: { roomId: string; seatId: SeatId; seatToken: string; name: string; ai: AiSeatConfig }) {
+  addBot(input: {
+    roomId: string;
+    seatId: SeatId;
+    seatToken: string;
+    name: string;
+    ai: AiSeatConfig;
+    botManagerToken?: string;
+  }) {
     const { room, seat } = this.authenticate(input.roomId, input.seatId, input.seatToken);
     this.assertHost(room, seat.id);
     if (room.status !== 'lobby') throw new Error('Cannot add bot after start');
     if (room.seats.length >= room.maxSeats) throw new Error('Room is full');
     const botId = nextAvailableSeatId(room);
+    const profile = input.ai.botProfileId
+      ? this.bots.getManagedProfile(input.ai.botProfileId, input.botManagerToken ?? '')
+      : null;
+    const ai = profile ? {
+      provider: profile.provider,
+      model: profile.model ?? undefined,
+      difficulty: profile.difficulty,
+      persona: profile.persona,
+      thinking: profile.thinking,
+      botProfileId: profile.id,
+    } satisfies AiSeatConfig : input.ai;
     room.seats.push({
       id: botId,
-      name: input.name,
+      name: profile?.name ?? input.name,
       kind: 'bot',
       ready: true,
       connected: true,
       temporaryBot: false,
       tokenHash: sha256(newToken()),
-      ai: input.ai,
+      ai,
+      botProfile: profile ?? undefined,
+      botMemories: profile
+        ? this.bots.listRuntimeMemories(profile.id, 12).map((memory) => memory.content)
+        : undefined,
     });
     this.save(room, 'bot_added', { seatId: botId });
     return this.snapshot(room, seat.id);
@@ -527,7 +577,7 @@ export class RoomService {
     return changedRoomIds;
   }
 
-  chat(input: { roomId: string; seatId: SeatId; seatToken: string; message: string }) {
+  async chat(input: { roomId: string; seatId: SeatId; seatToken: string; message: string }) {
     const { room, seat } = this.authenticate(input.roomId, input.seatId, input.seatToken);
     const now = Date.now();
     const recent = room.chat.filter((entry) => entry.seatId === seat.id && now - Date.parse(entry.createdAt) < 10_000);
@@ -541,9 +591,70 @@ export class RoomService {
       round: room.gameState?.round ?? 0,
     };
     room.chat.push(entry);
+    const publicContext = {
+      round: room.gameState?.round ?? 0,
+      phase: room.gameState?.phase ?? 'lobby',
+      calamity: room.gameState?.currentCalamity ?? null,
+      demand: room.gameState?.currentDemand ?? 0,
+      platform: room.gameState ? structuredClone(room.gameState.platform) : null,
+      players: room.gameState?.players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        spirit: player.spirit,
+        cultivation: player.cultivation,
+        merit: player.merit,
+        equipment: player.equipment,
+        revealedPlan: player.revealedPlan,
+      })) ?? [],
+      recentPublicChat: room.chat.slice(-14).map((message) => ({
+        name: message.name,
+        message: message.message,
+        round: message.round,
+      })),
+      playerMessage: entry.message,
+    };
+    const replies: RoomPayload['chat'] = [];
+    const respondingBots = room.seats.filter((candidate) => candidate.kind === 'bot').slice(0, 2);
+    for (const bot of respondingBots) {
+      const seatConfig = bot.ai ?? { provider: 'local-bot', difficulty: 'normal', persona: 'steady' };
+      const reply = await createAiPublicChatReply({
+        seatConfig,
+        publicContext,
+        profile: profilePrompt(bot),
+        maxChars: 120,
+      });
+      const replyEntry = {
+        id: newId('chat'),
+        seatId: bot.id,
+        name: bot.name,
+        message: reply.message,
+        createdAt: new Date().toISOString(),
+        round: room.gameState?.round ?? 0,
+      };
+      room.chat.push(replyEntry);
+      replies.push(replyEntry);
+      this.recordBotProviderUsage(bot, reply, {
+        kind: 'public_chat',
+        roomId: room.id,
+      });
+      if (bot.ai?.botProfileId) {
+        this.bots.recordGrowth({
+          profileId: bot.ai.botProfileId,
+          xp: 1,
+          messages: 1,
+          fallback: reply.usedFallback ? 1 : 0,
+        });
+        this.bots.appendRuntimeMemory({
+          profileId: bot.ai.botProfileId,
+          content: `第 ${room.gameState?.round ?? 0} 轮，${seat.name}公开说“${entry.message.slice(0, 120)}”；我回应“${reply.message.slice(0, 120)}”。`,
+          metadata: { kind: 'public_chat', roomId: room.id, round: room.gameState?.round ?? 0 },
+        });
+        bot.botMemories = this.bots.listRuntimeMemories(bot.ai.botProfileId, 12).map((memory) => memory.content);
+      }
+    }
     room.chat = room.chat.slice(-100);
-    this.save(room, 'chat_sent', { seatId: seat.id });
-    return entry;
+    this.save(room, 'chat_sent', { seatId: seat.id, botReplySeatIds: replies.map((reply) => reply.seatId) });
+    return { entry, replies };
   }
 
   snapshot(room: RoomPayload, seatId: SeatId | null): RoomSnapshot {
@@ -603,6 +714,63 @@ export class RoomService {
 
   private assertHost(room: RoomPayload, seatId: SeatId): void {
     if (room.hostSeatId !== seatId) throw new Error('Host permission required');
+  }
+
+  private recordBotProviderUsage(
+    bot: RoomSeat,
+    result: {
+      provider: AiSeatConfig['provider'];
+      model: string;
+      tokenUsage?: AiTokenUsage;
+      latencyMs: number;
+      retryCount: number;
+      usedFallback: boolean;
+    },
+    metadata: Record<string, unknown>,
+  ): void {
+    const profileId = bot.ai?.botProfileId;
+    if (!profileId || (bot.ai?.provider === 'local-bot' && !result.usedFallback && !result.tokenUsage)) return;
+    const usage = result.tokenUsage;
+    this.bots.recordUsage({
+      profileId,
+      provider: result.provider,
+      model: result.model,
+      cacheStatus: (usage?.promptCacheHitTokens ?? 0) > 0 ? 'hit' : 'miss',
+      inputTokens: usageInputTokens(usage),
+      outputTokens: usage?.completionTokens ?? 0,
+      reasoningTokens: usage?.reasoningTokens ?? 0,
+      latencyMs: result.latencyMs,
+      retryCount: result.retryCount,
+      usedFallback: result.usedFallback,
+      usdMicros: usage?.estimatedCostUsdMicros ?? 0,
+      metadata,
+    });
+  }
+
+  private finalizeBotGrowth(room: RoomPayload): void {
+    if (!room.gameState?.outcome || room.botGrowthFinalized) return;
+    for (const bot of room.seats.filter((seat) => seat.kind === 'bot' && seat.ai?.botProfileId)) {
+      const profileId = bot.ai!.botProfileId!;
+      const ascended = room.gameState.outcome.kind === 'ascension'
+        && room.gameState.outcome.ascenders.includes(bot.id);
+      this.bots.recordGrowth({
+        profileId,
+        xp: ascended ? 60 : 30,
+        games: 1,
+        ascensions: ascended ? 1 : 0,
+      });
+      this.bots.appendRuntimeMemory({
+        profileId,
+        content: room.gameState.outcome.kind === 'ascension'
+          ? `第 ${room.gameState.outcome.round} 轮对局结束；${ascended ? '我成功飞升' : '我未获飞升席位'}，终局由${room.gameState.outcome.reason === 'vote' ? '投票启动' : '强行破界'}触发。`
+          : `第 ${room.gameState.outcome.round} 轮仙台共同失败，原因是${room.gameState.outcome.reason === 'third_crack' ? '形成第三道裂痕' : '八轮内未启动'}。`,
+        metadata: { kind: 'game_outcome', roomId: room.id, outcome: room.gameState.outcome.kind },
+      });
+    }
+    room.botGrowthFinalized = true;
+    this.save(room, 'bot_growth_finalized', {
+      botProfileIds: room.seats.flatMap((seat) => seat.ai?.botProfileId ? [seat.ai.botProfileId] : []),
+    });
   }
 
   private markPersistedHumansDisconnected(): void {
@@ -704,7 +872,12 @@ export class RoomService {
   private async runBotLoop(roomId: string): Promise<RoomPayload> {
     let room = this.getRoom(roomId);
     for (let steps = 0; steps < 250; steps += 1) {
-      if (room.status !== 'active' || !room.gameState || room.gameState.outcome) return room;
+      if (!room.gameState) return room;
+      if (room.gameState.outcome) {
+        this.finalizeBotGrowth(room);
+        return this.getRoom(roomId);
+      }
+      if (room.status !== 'active') return room;
       const bot = room.seats.find((seat) => seat.kind === 'bot' && getLegalActions(room.gameState!, seat.id).length > 0);
       if (!bot) return room;
       const state = room.gameState;
@@ -720,13 +893,17 @@ export class RoomService {
       let latencyMs = 0;
       let retryCount = 0;
       let requestMode: 'tool' | 'json' | 'local' = 'local';
-      let tokenUsage: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | undefined;
+      let tokenUsage: AiTokenUsage | undefined;
+      let publicRationale = heuristic.publicSpeech;
       if (bot.ai?.provider && bot.ai.provider !== 'local-bot') {
         const ai = await chooseAiMove({
           seatConfig: bot.ai,
           view,
           legalActions,
-          rulesDigest: '只能选择服务端提供的合法动作；目标是在保住仙台的同时争取飞升席位。',
+          rulesDigest: [
+            '只能选择服务端提供的合法动作；目标是在保住仙台的同时争取飞升席位。',
+            profilePrompt(bot),
+          ].filter(Boolean).join('\n'),
         });
         usedProvider = ai.provider;
         usedFallback = ai.usedFallback;
@@ -736,6 +913,7 @@ export class RoomService {
         retryCount = ai.retryCount;
         requestMode = ai.requestMode;
         tokenUsage = ai.tokenUsage;
+        publicRationale = ai.reasoning.slice(0, 160);
         if (!ai.usedFallback && legalActions.some((action) => action.id === ai.actionId)) {
           actionId = ai.actionId;
         }
@@ -743,19 +921,44 @@ export class RoomService {
       const action = legalActions.find((candidate) => candidate.id === actionId) ?? heuristic.action;
       room.gameState = applyAction(state, action);
       room.actionIds.push(action.id);
-      room.chat.push({
-        id: newId('chat'),
-        seatId: bot.id,
-        name: bot.name,
-        message: [
-          publicBotMessage(action, heuristic.publicSpeech),
-          usedFallback ? '（外部 Provider 不可用，本步由本地 Bot 接管。）' : '',
-        ].filter(Boolean).join(' '),
-        createdAt: new Date().toISOString(),
-        round: room.gameState.round,
-      });
-      room.chat = room.chat.slice(-100);
+      const shouldPublishDecision = action.type === 'READY_NEGOTIATION';
+      if (shouldPublishDecision) {
+        room.chat.push({
+          id: newId('chat'),
+          seatId: bot.id,
+          name: bot.name,
+          message: [
+            publicBotMessage(action, publicRationale),
+            usedFallback ? '（外部 Provider 不可用，本步由本地 Bot 接管。）' : '',
+          ].filter(Boolean).join(' '),
+          createdAt: new Date().toISOString(),
+          round: room.gameState.round,
+        });
+        room.chat = room.chat.slice(-100);
+      }
       if (room.gameState.outcome) room.status = 'finished';
+      this.recordBotProviderUsage(bot, {
+        provider: usedProvider,
+        model: usedModel,
+        tokenUsage,
+        latencyMs,
+        retryCount,
+        usedFallback,
+      }, {
+        kind: 'decision',
+        roomId: room.id,
+        round: room.gameState.round,
+        actionId: action.id,
+      });
+      if (bot.ai?.botProfileId) {
+        this.bots.recordGrowth({
+          profileId: bot.ai.botProfileId,
+          xp: 2,
+          decisions: 1,
+          messages: shouldPublishDecision ? 1 : 0,
+          fallback: usedFallback ? 1 : 0,
+        });
+      }
       this.log({
         event: 'ai_decision',
         roomId: room.id,
@@ -786,6 +989,7 @@ export class RoomService {
         tokenUsage,
         usedFallback,
       });
+      if (room.gameState.outcome) this.finalizeBotGrowth(room);
       room = this.getRoom(roomId);
     }
     this.storage.appendEvent(room.id, 'ai_loop_stopped', { reason: 'step_limit' });

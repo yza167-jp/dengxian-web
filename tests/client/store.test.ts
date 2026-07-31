@@ -50,7 +50,7 @@ describe('client game store', () => {
     expect(after?.seatId).toBe('seat-1');
     expect(after?.revision).toBeGreaterThan(before!.revision);
     expect(after?.self).toBeTruthy();
-    expect(useGameStore.getState().chat.some((message) => message.message.length > 0)).toBe(true);
+    expect(useGameStore.getState().chat.every((message) => message.message.length > 0)).toBe(true);
   });
 
   it('autosaves the recent local solo game after transitions', async () => {

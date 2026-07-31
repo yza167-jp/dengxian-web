@@ -9,7 +9,7 @@
   "scripts": {
     "sync:upstream": "node scripts/sync-upstream.mjs",
     "predev": "npm run sync:upstream",
-    "dev": "concurrently -k -n WEB,SERVER -c magenta,cyan \"vite --host 0.0.0.0\" \"tsx watch src/server/index.ts\"",
+    "dev": "concurrently -k -n WEB,SERVER -c magenta,cyan \"vite --host 0.0.0.0\" \"tsx watch --env-file-if-exists=.env src/server/index.ts\"",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
@@ -17,7 +17,7 @@
     "test:e2e": "playwright test",
     "e2e": "npm run test:e2e",
     "build": "npm run sync:upstream && vite build && tsup src/server/index.ts --format esm --platform node --target node24 --out-dir dist/server --clean false && tsup scripts/verify-replay.ts --format esm --platform node --target node24 --out-dir dist/scripts --clean false",
-    "start": "NODE_ENV=production node dist/server/index.js",
+    "start": "NODE_ENV=production node --env-file-if-exists=.env dist/server/index.js",
     "verify": "npm run sync:upstream && npm audit && npm run typecheck && npm run lint && npm test && npm run sim && npm run build && npm run test:e2e"
   },
   "dependencies": {

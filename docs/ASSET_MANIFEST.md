@@ -65,6 +65,72 @@ Source: measured crops from `public/assets/upstream/raw/04-每轮秘密四选一
 | `public/assets/upstream/actions/resist.webp` | 50K | 360x500 | Secret-plan 抗劫 button and revealed-plan icon source |
 | `public/assets/upstream/actions/explore.webp` | 56K | 360x500 | Secret-plan 探索 button and explore action source |
 
+## Extracted Opportunity And Equipment Cards
+
+Source: PDF-native crops from upstream `output/pdf/末法登仙台_打印即玩套件_v0.1.pdf` pages 23-28. Extraction used `scripts/extract-upstream-card-art.py`, matching the upstream ReportLab layout constants: 63x88mm cards, A4 page size `595.276x841.89pt`, centered 3x3 grid, and crop boxes in PDF points from the lower-left page origin. WebP assets were rendered at 300 DPI with `pdftoppm` and converted with `cwebp -q 88`; representative crops `C01`, `E01`, and `E16` were visually inspected for full border, readable text, and correct disposable/equipment coloring.
+
+| Path | Size | Dimensions | PDF page / slot | Purpose |
+|---|---:|---:|---|---|
+| `public/assets/upstream/cards/C01.webp` | 20K | 745x1040 | page 23, slot 1 | Full 聚灵丹 一次性丹药 card art |
+| `public/assets/upstream/cards/C02.webp` | 26K | 745x1040 | page 23, slot 2 | Full 破境丹 一次性丹药 card art |
+| `public/assets/upstream/cards/C03.webp` | 23K | 745x1040 | page 23, slot 3 | Full 回气散 一次性丹药 card art |
+| `public/assets/upstream/cards/C04.webp` | 22K | 745x1040 | page 23, slot 4 | Full 清心露 一次性丹药 card art |
+| `public/assets/upstream/cards/C05.webp` | 24K | 745x1040 | page 23, slot 5 | Full 引雷符 一次性符箓 card art |
+| `public/assets/upstream/cards/C06.webp` | 26K | 745x1040 | page 23, slot 6 | Full 避雷符 一次性符箓 card art |
+| `public/assets/upstream/cards/C07.webp` | 24K | 745x1040 | page 23, slot 7 | Full 补天石 一次性奇物 card art |
+| `public/assets/upstream/cards/C08.webp` | 24K | 745x1040 | page 23, slot 8 | Full 护阵符 一次性符箓 card art |
+| `public/assets/upstream/cards/C09.webp` | 28K | 745x1040 | page 23, slot 9 | Full 缩地诀 一次性秘术 card art |
+| `public/assets/upstream/cards/C10.webp` | 24K | 745x1040 | page 24, slot 1 | Full 归元诀 一次性秘术 card art |
+| `public/assets/upstream/cards/C11.webp` | 25K | 745x1040 | page 24, slot 2 | Full 天机简 一次性奇物 card art |
+| `public/assets/upstream/cards/C12.webp` | 25K | 745x1040 | page 24, slot 3 | Full 双生莲 一次性灵植 card art |
+| `public/assets/upstream/cards/C13.webp` | 26K | 745x1040 | page 24, slot 4 | Full 窃灵手 一次性秘术 card art |
+| `public/assets/upstream/cards/C14.webp` | 25K | 745x1040 | page 24, slot 5 | Full 乱阵钉 一次性暗器 card art |
+| `public/assets/upstream/cards/C15.webp` | 29K | 745x1040 | page 24, slot 6 | Full 借劫符 一次性邪符 card art |
+| `public/assets/upstream/cards/C16.webp` | 25K | 745x1040 | page 24, slot 7 | Full 观因镜 一次性奇物 card art |
+| `public/assets/upstream/cards/E01.webp` | 26K | 745x1040 | page 24, slot 8 | Full 聚灵葫芦 持续法宝 card art |
+| `public/assets/upstream/cards/E02.webp` | 25K | 745x1040 | page 24, slot 9 | Full 玄龟甲 持续法宝 card art |
+| `public/assets/upstream/cards/E03.webp` | 24K | 745x1040 | page 25, slot 1 | Full 青冥剑 持续法宝 card art |
+| `public/assets/upstream/cards/E04.webp` | 24K | 745x1040 | page 25, slot 2 | Full 阵纹尺 持续法宝 card art |
+| `public/assets/upstream/cards/E05.webp` | 24K | 745x1040 | page 25, slot 3 | Full 乾坤袋 持续法宝 card art |
+| `public/assets/upstream/cards/E06.webp` | 23K | 745x1040 | page 25, slot 4 | Full 归元珠 持续法宝 card art |
+| `public/assets/upstream/cards/E07.webp` | 25K | 745x1040 | page 25, slot 5 | Full 夺灵幡 持续法宝 card art |
+| `public/assets/upstream/cards/E08.webp` | 27K | 745x1040 | page 25, slot 6 | Full 照影镜 持续法宝 card art |
+| `public/assets/upstream/cards/C17.webp` | 29K | 745x1040 | page 25, slot 7 | Full 灵髓丹 一次性丹药 card art |
+| `public/assets/upstream/cards/C18.webp` | 26K | 745x1040 | page 25, slot 8 | Full 定神丹 一次性丹药 card art |
+| `public/assets/upstream/cards/C19.webp` | 23K | 745x1040 | page 25, slot 9 | Full 换骨丹 一次性丹药 card art |
+| `public/assets/upstream/cards/C20.webp` | 31K | 745x1040 | page 26, slot 1 | Full 假死丹 一次性丹药 card art |
+| `public/assets/upstream/cards/C21.webp` | 30K | 745x1040 | page 26, slot 2 | Full 同心符 一次性符箓 card art |
+| `public/assets/upstream/cards/C22.webp` | 25K | 745x1040 | page 26, slot 3 | Full 渡厄符 一次性符箓 card art |
+| `public/assets/upstream/cards/C23.webp` | 30K | 745x1040 | page 26, slot 4 | Full 藏锋符 一次性符箓 card art |
+| `public/assets/upstream/cards/C24.webp` | 28K | 745x1040 | page 26, slot 5 | Full 封灵符 一次性符箓 card art |
+| `public/assets/upstream/cards/C25.webp` | 25K | 745x1040 | page 26, slot 6 | Full 窥天简 一次性奇物 card art |
+| `public/assets/upstream/cards/C26.webp` | 27K | 745x1040 | page 26, slot 7 | Full 探云尺 一次性奇物 card art |
+| `public/assets/upstream/cards/C27.webp` | 31K | 745x1040 | page 26, slot 8 | Full 燃灵诀 一次性秘术 card art |
+| `public/assets/upstream/cards/C28.webp` | 30K | 745x1040 | page 26, slot 9 | Full 借功诀 一次性秘术 card art |
+| `public/assets/upstream/cards/C29.webp` | 26K | 745x1040 | page 27, slot 1 | Full 逆行诀 一次性秘术 card art |
+| `public/assets/upstream/cards/C30.webp` | 24K | 745x1040 | page 27, slot 2 | Full 禁宝咒 一次性秘术 card art |
+| `public/assets/upstream/cards/C31.webp` | 28K | 745x1040 | page 27, slot 3 | Full 寄雷咒 一次性秘术 card art |
+| `public/assets/upstream/cards/C32.webp` | 32K | 745x1040 | page 27, slot 4 | Full 牵机索 一次性奇物 card art |
+| `public/assets/upstream/cards/E09.webp` | 25K | 745x1040 | page 27, slot 5 | Full 悟道蒲团 持续法宝 card art |
+| `public/assets/upstream/cards/E10.webp` | 27K | 745x1040 | page 27, slot 6 | Full 功德碑 持续法宝 card art |
+| `public/assets/upstream/cards/E11.webp` | 28K | 745x1040 | page 27, slot 7 | Full 遁天梭 持续法宝 card art |
+| `public/assets/upstream/cards/E12.webp` | 26K | 745x1040 | page 27, slot 8 | Full 观星盘 持续法宝 card art |
+| `public/assets/upstream/cards/E13.webp` | 21K | 745x1040 | page 27, slot 9 | Full 寻宝鼠 持续法宝 card art |
+| `public/assets/upstream/cards/E14.webp` | 30K | 745x1040 | page 28, slot 1 | Full 镇魂铃 持续法宝 card art |
+| `public/assets/upstream/cards/E15.webp` | 23K | 745x1040 | page 28, slot 2 | Full 山河图 持续法宝 card art |
+| `public/assets/upstream/cards/E16.webp` | 31K | 745x1040 | page 28, slot 3 | Full 天罗伞 持续法宝 card art |
+
+## Extracted Calamity And Fate Cards
+
+The same deterministic extraction script covers the remaining print-and-play decks. Calamities come from PDF pages 29-30 in `T01`-`T18` CSV order; secret fates come from pages 31-32 in `F01`-`F12` order. All 30 assets use the same measured 63x88mm crop, 300 DPI render, and 745x1040 WebP output as the opportunity deck.
+
+| Path range | Count | Dimensions | Purpose |
+|---|---:|---:|---|
+| `public/assets/upstream/cards/T01.webp` … `T18.webp` | 18 | 745x1040 | Full upstream 天劫 card faces in the central altar and glossary |
+| `public/assets/upstream/cards/F01.webp` … `F12.webp` | 12 | 745x1040 | Full upstream 秘密天命 card faces in the private player area and settlement |
+
+The runtime card-art directory therefore contains 78 complete upstream card faces: 32 consumable opportunities, 16 equipment cards, 18 calamities, and 12 secret fates.
+
 ## Extracted Table And Social Art
 
 | Path | Size | Dimensions | Provenance | Purpose |

@@ -70,6 +70,68 @@ describe('server http contracts', () => {
     expect(providers.body.providers.some((provider: any) => provider.id === 'local-bot')).toBe(true);
   });
 
+  it('manages token-scoped persistent bots and records public conversation growth', async () => {
+    const managerToken = 'm'.repeat(64);
+    const otherToken = 'n'.repeat(64);
+    const presets = await request(app.app).get('/api/bots/presets').expect(200);
+    expect(presets.body.presets).toHaveLength(16);
+
+    const createdBot = await request(app.app)
+      .post('/api/bots')
+      .set('x-bot-manager-token', managerToken)
+      .send({ presetId: 'archive-sage' })
+      .expect(201);
+    expect(createdBot.body.profile.name).toBe('藏经老修');
+    expect(JSON.stringify(createdBot.body)).not.toContain(managerToken);
+
+    const ownList = await request(app.app)
+      .get('/api/bots')
+      .set('x-bot-manager-token', managerToken)
+      .expect(200);
+    expect(ownList.body.profiles).toHaveLength(1);
+    const otherList = await request(app.app)
+      .get('/api/bots')
+      .set('x-bot-manager-token', otherToken)
+      .expect(200);
+    expect(otherList.body.profiles).toHaveLength(0);
+
+    const room = await request(app.app).post('/api/rooms').send({
+      hostName: '甲',
+      maxSeats: 4,
+      seed: 901,
+    }).expect(201);
+    await request(app.app).post('/api/rooms/add-bot').send({
+      roomId: room.body.room.id,
+      seatId: room.body.seatId,
+      seatToken: room.body.seatToken,
+      name: '不能覆盖长期名',
+      ai: {
+        provider: 'local-bot',
+        difficulty: 'normal',
+        persona: 'steady',
+        botProfileId: createdBot.body.profile.id,
+      },
+      botManagerToken: managerToken,
+    }).expect(200);
+
+    const conversation = await app.services.rooms.chat({
+      roomId: room.body.room.id,
+      seatId: room.body.seatId,
+      seatToken: room.body.seatToken,
+      message: '这一轮谁愿意和我一起修台？',
+    });
+    expect(conversation.replies).toHaveLength(1);
+    expect(conversation.replies[0]!.name).toBe('藏经老修');
+
+    const dashboard = await request(app.app)
+      .get(`/api/bots/${createdBot.body.profile.id}/dashboard`)
+      .set('x-bot-manager-token', managerToken)
+      .expect(200);
+    expect(dashboard.body.growth.messages).toBe(1);
+    expect(dashboard.body.memories[0].content).toContain('一起修台');
+    expect(JSON.stringify(dashboard.body)).not.toContain('manager_token');
+  });
+
   it('creates lobby rooms with one-time tokens but no persisted token hashes in responses', async () => {
     const response = await request(app.app).post('/api/rooms').send({ hostName: '甲', maxSeats: 4, seed: 7 }).expect(201);
     expect(response.body.seatToken).toHaveLength(32);
@@ -339,7 +401,9 @@ describe('server http contracts', () => {
     }).expect(200);
     expect(afterHuman.body.view.revision).toBeGreaterThan(started.body.view.revision + 1);
     expect(JSON.stringify(afterHuman.body)).not.toContain('reasoning_content');
-    expect(afterHuman.body.room.chat.some((entry: any) => entry.seatId.startsWith('seat-'))).toBe(true);
+    const botChat = afterHuman.body.room.chat.filter((entry: any) => entry.seatId.startsWith('seat-'));
+    expect(botChat.length).toBeLessThanOrEqual(3);
+    expect(botChat.some((entry: any) => /私下选择|本轮密议|我选择了/.test(entry.message))).toBe(false);
   });
 
   it('emits bounded structured AI diagnostics without prompts or reasoning', async () => {
@@ -565,7 +629,7 @@ describe('server http contracts', () => {
     }
   });
 
-  it('authenticates and rate-limits public chat messages', () => {
+  it('authenticates and rate-limits public chat messages', async () => {
     const created = app.services.rooms.createRoom({ hostName: '甲', maxSeats: 4, seed: 8 });
     const input = {
       roomId: created.room.id,
@@ -573,11 +637,12 @@ describe('server http contracts', () => {
       seatToken: created.seatToken,
       message: '<script>承诺抗劫</script>',
     };
-    expect(() => app.services.rooms.chat({ ...input, seatToken: 'invalid-token-value' })).toThrow(/Invalid seat token/);
+    await expect(app.services.rooms.chat({ ...input, seatToken: 'invalid-token-value' })).rejects.toThrow(/Invalid seat token/);
     for (let index = 0; index < 5; index += 1) {
-      expect(app.services.rooms.chat({ ...input, message: `承诺抗劫 ${index}` }).message).toBe(`承诺抗劫 ${index}`);
+      const result = await app.services.rooms.chat({ ...input, message: `承诺抗劫 ${index}` });
+      expect(result.entry.message).toBe(`承诺抗劫 ${index}`);
     }
-    expect(() => app.services.rooms.chat(input)).toThrow(/rate limit/i);
+    await expect(app.services.rooms.chat(input)).rejects.toThrow(/rate limit/i);
   });
 
   it('lets the host assign a temporary bot after grace and restores the human on reconnect', async () => {

@@ -1,10 +1,15 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { z } from 'zod';
 import type { AiSeatConfig, GameAction, GameView } from '../shared/game/types';
+import { estimateDeepSeekUsdMicros, type ProviderTokenUsage } from './providerPricing';
 
 const aiResponseSchema = z.object({
   actionId: z.string(),
   reasoning: z.string().min(1).max(800).default('已选择一个合法动作。'),
+});
+
+const publicChatResponseSchema = z.object({
+  message: z.string().trim().min(1).max(160),
 });
 
 const providerResponseSchema = z.object({
@@ -20,8 +25,13 @@ const providerResponseSchema = z.object({
   })).min(1),
   usage: z.object({
     prompt_tokens: z.number().int().min(0).optional(),
+    prompt_cache_hit_tokens: z.number().int().min(0).optional(),
+    prompt_cache_miss_tokens: z.number().int().min(0).optional(),
     completion_tokens: z.number().int().min(0).optional(),
     total_tokens: z.number().int().min(0).optional(),
+    completion_tokens_details: z.object({
+      reasoning_tokens: z.number().int().min(0).optional(),
+    }).optional(),
   }).optional(),
 });
 
@@ -30,6 +40,13 @@ export interface AiMoveRequest {
   view: GameView;
   legalActions: GameAction[];
   rulesDigest?: string;
+}
+
+export interface AiPublicChatReplyRequest {
+  seatConfig: AiSeatConfig;
+  publicContext: unknown;
+  profile?: string;
+  maxChars?: number;
 }
 
 export interface AiMoveResponse {
@@ -42,11 +59,23 @@ export interface AiMoveResponse {
   latencyMs: number;
   retryCount: number;
   requestMode: ProviderRequestMode | 'local';
-  tokenUsage?: {
-    promptTokens?: number;
-    completionTokens?: number;
-    totalTokens?: number;
-  };
+  tokenUsage?: AiTokenUsage;
+}
+
+export interface AiPublicChatReplyResponse {
+  message: string;
+  provider: AiSeatConfig['provider'];
+  usedFallback: boolean;
+  model: string;
+  requestedModel: string;
+  latencyMs: number;
+  retryCount: number;
+  requestMode: 'json' | 'local';
+  tokenUsage?: AiTokenUsage;
+}
+
+export interface AiTokenUsage extends ProviderTokenUsage {
+  estimatedCostUsdMicros?: number | null;
 }
 
 const circuits = new Map<string, { failures: number; openedUntil: number }>();
@@ -65,6 +94,30 @@ class ProviderHttpError extends Error {
 }
 
 class ProviderOutputError extends Error {}
+
+function deepSeekThinkingType(config: AiSeatConfig): 'enabled' | 'disabled' {
+  return config.thinking ? 'enabled' : 'disabled';
+}
+
+function tokenUsageFromProvider(
+  provider: AiSeatConfig['provider'],
+  model: string,
+  usage: z.infer<typeof providerResponseSchema>['usage'],
+): AiTokenUsage | undefined {
+  if (!usage) return undefined;
+  const parsed: AiTokenUsage = {
+    promptTokens: usage.prompt_tokens,
+    promptCacheHitTokens: usage.prompt_cache_hit_tokens,
+    promptCacheMissTokens: usage.prompt_cache_miss_tokens,
+    completionTokens: usage.completion_tokens,
+    totalTokens: usage.total_tokens,
+    reasoningTokens: usage.completion_tokens_details?.reasoning_tokens,
+  };
+  parsed.estimatedCostUsdMicros = provider === 'deepseek'
+    ? estimateDeepSeekUsdMicros(model, parsed)
+    : null;
+  return parsed;
+}
 
 export function listProviders() {
   return [
@@ -127,6 +180,33 @@ function localDecision(
   };
 }
 
+function localPublicChatReply(
+  request: AiPublicChatReplyRequest,
+  reason: string,
+  usedFallback: boolean,
+  requestedModel: string,
+  retryCount: number,
+  startedAt: number,
+): AiPublicChatReplyResponse {
+  const fallbackByPersona: Record<AiSeatConfig['persona'], string> = {
+    steady: '先稳住仙台，再看谁肯补位。',
+    bold: '我愿意顶上关键缺口，但也要看到诚意。',
+    suspicious: '话先说清，别把风险全推给我。',
+    selfish: '我会出手，但收益要摆在明面上。',
+    guardian: '先保仙台不裂，功劳之后再分。',
+  };
+  return {
+    message: `${fallbackByPersona[request.seatConfig.persona]} ${reason}`.slice(0, request.maxChars ?? 80),
+    provider: 'local-bot',
+    usedFallback,
+    model: 'heuristic-v1',
+    requestedModel,
+    latencyMs: Date.now() - startedAt,
+    retryCount,
+    requestMode: 'local',
+  };
+}
+
 function providerConfig(config: AiSeatConfig, mode: ProviderRequestMode) {
   if (config.provider === 'deepseek') {
     return {
@@ -170,6 +250,28 @@ function buildMessages(request: AiMoveRequest, mode: ProviderRequestMode) {
       content: JSON.stringify({
         view: request.view,
         legalActions: legal,
+      }),
+    },
+  ];
+}
+
+function buildPublicChatMessages(request: AiPublicChatReplyRequest) {
+  return [
+    {
+      role: 'system',
+      content: [
+        '你是《末法登仙台》谈判阶段的一名公开发言玩家。',
+        '只根据 publicContext 与可公开画像发言，禁止提及手牌、天命、暗中计划、密票、内部推理或任何私密状态。',
+        '只输出 JSON：{"message":"..."}，不要输出 Markdown。',
+        `性格=${request.seatConfig.persona}，难度=${request.seatConfig.difficulty}。`,
+        request.profile ? `公开画像/记忆：${request.profile.slice(0, 600)}` : '',
+        `回复不超过 ${request.maxChars ?? 80} 个中文字符。`,
+      ].filter(Boolean).join('\n'),
+    },
+    {
+      role: 'user',
+      content: JSON.stringify({
+        publicContext: request.publicContext,
       }),
     },
   ];
@@ -242,7 +344,8 @@ async function requestProvider(
         temperature: request.seatConfig.difficulty === 'hard' ? 0.35 : 0.55,
         max_tokens: 500,
         ...(isDeepSeek ? {
-          thinking: { type: request.seatConfig.thinking ? 'enabled' : 'disabled' },
+          thinking: { type: deepSeekThinkingType(request.seatConfig) },
+          ...(deepSeekThinkingType(request.seatConfig) === 'enabled' ? { reasoning_effort: 'high' } : {}),
         } : {}),
         response_format: { type: 'json_object' },
         ...(mode === 'tool' ? {
@@ -292,11 +395,7 @@ async function requestProvider(
         latencyMs: Date.now() - startedAt,
         retryCount: diagnostics.retryCount,
         requestMode: mode,
-        tokenUsage: raw.usage ? {
-          promptTokens: raw.usage.prompt_tokens,
-          completionTokens: raw.usage.completion_tokens,
-          totalTokens: raw.usage.total_tokens,
-        } : undefined,
+        tokenUsage: tokenUsageFromProvider(request.seatConfig.provider, cfg.model, raw.usage),
       };
     } catch (error) {
       if (error instanceof ProviderOutputError) throw error;
@@ -371,6 +470,90 @@ async function callOpenAiCompatible(
   }
 }
 
+async function requestPublicChatProvider(
+  request: AiPublicChatReplyRequest,
+  deadline: number,
+  diagnostics: AttemptDiagnostics,
+  startedAt: number,
+): Promise<AiPublicChatReplyResponse> {
+  const cfg = providerConfig(request.seatConfig, 'json');
+  if (!cfg.key) throw new Error('provider api key is not configured');
+  if (Date.now() >= deadline) throw new Error('provider total wait limit exceeded');
+
+  const controller = new AbortController();
+  const timeoutMs = Math.min(numericEnv('AI_TIMEOUT_MS', 12_000), Math.max(1, deadline - Date.now()));
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const isDeepSeek = request.seatConfig.provider === 'deepseek';
+    const thinkingType = deepSeekThinkingType(request.seatConfig);
+    const response = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${cfg.key}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: buildPublicChatMessages(request),
+        temperature: request.seatConfig.difficulty === 'hard' ? 0.45 : 0.6,
+        max_tokens: 180,
+        ...(isDeepSeek ? {
+          thinking: { type: thinkingType },
+          ...(thinkingType === 'enabled' ? { reasoning_effort: 'high' } : {}),
+        } : {}),
+        response_format: { type: 'json_object' },
+      }),
+    });
+    if (!response.ok) {
+      throw new ProviderHttpError(response.status, retryAfterMs(response));
+    }
+    try {
+      const raw = providerResponseSchema.parse(await response.json());
+      const parsed = publicChatResponseSchema.parse(extractJson(raw.choices[0]!.message.content ?? '{}'));
+      return {
+        message: parsed.message.slice(0, request.maxChars ?? 80),
+        provider: request.seatConfig.provider,
+        usedFallback: false,
+        model: cfg.model,
+        requestedModel: cfg.model,
+        latencyMs: Date.now() - startedAt,
+        retryCount: diagnostics.retryCount,
+        requestMode: 'json',
+        tokenUsage: tokenUsageFromProvider(request.seatConfig.provider, cfg.model, raw.usage),
+      };
+    } catch (error) {
+      throw new ProviderOutputError(error instanceof Error ? error.message : 'invalid provider output');
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function requestPublicChatWithRetries(
+  request: AiPublicChatReplyRequest,
+  attempt: number,
+  deadline: number,
+  diagnostics: AttemptDiagnostics,
+  startedAt: number,
+): Promise<AiPublicChatReplyResponse> {
+  try {
+    return await requestPublicChatProvider(request, deadline, diagnostics, startedAt);
+  } catch (error) {
+    const maxRetries = Math.floor(numericEnv('AI_MAX_RETRIES', 2));
+    if (!isTransientProviderError(error) || attempt >= maxRetries || Date.now() >= deadline) {
+      throw error;
+    }
+    const requestedDelay = error instanceof ProviderHttpError && error.retryAfterMs !== null
+      ? error.retryAfterMs
+      : 120 * 2 ** attempt + Math.floor(Math.random() * 120);
+    const delay = Math.min(requestedDelay, Math.max(0, deadline - Date.now()));
+    if (delay > 0) await sleep(delay);
+    diagnostics.retryCount += 1;
+    return requestPublicChatWithRetries(request, attempt + 1, deadline, diagnostics, startedAt);
+  }
+}
+
 export async function chooseAiMove(request: AiMoveRequest): Promise<AiMoveResponse> {
   const startedAt = Date.now();
   const diagnostics: AttemptDiagnostics = { retryCount: 0 };
@@ -403,5 +586,29 @@ export async function chooseAiMove(request: AiMoveRequest): Promise<AiMoveRespon
       diagnostics.retryCount,
       startedAt,
     );
+  }
+}
+
+export async function createAiPublicChatReply(
+  request: AiPublicChatReplyRequest,
+): Promise<AiPublicChatReplyResponse> {
+  const startedAt = Date.now();
+  const diagnostics: AttemptDiagnostics = { retryCount: 0 };
+  const requestedModel = request.seatConfig.provider === 'local-bot'
+    ? 'heuristic-v1'
+    : providerConfig(request.seatConfig, 'json').model;
+  if (request.seatConfig.provider === 'local-bot') {
+    return localPublicChatReply(request, '（本地回应）', false, requestedModel, diagnostics.retryCount, startedAt);
+  }
+  try {
+    return await requestPublicChatWithRetries(
+      request,
+      0,
+      Date.now() + numericEnv('AI_MAX_TOTAL_WAIT_MS', 28_000),
+      diagnostics,
+      startedAt,
+    );
+  } catch {
+    return localPublicChatReply(request, '（外部回应不可用）', true, requestedModel, diagnostics.retryCount, startedAt);
   }
 }

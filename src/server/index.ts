@@ -6,10 +6,13 @@ import { resolve } from 'node:path';
 import { Server as SocketServer } from 'socket.io';
 import { ZodError } from 'zod';
 import { chooseAiMove, listProviders } from './ai';
+import { BotService } from './botService';
 import { RoomService } from './roomService';
 import {
   addBotSchema,
   aiMoveSchema,
+  botCreateSchema,
+  botUpdateSchema,
   chatSchema,
   commandSchema,
   createRoomSchema,
@@ -33,6 +36,7 @@ type SocketResult = Promise<unknown> | object | string | number | boolean | null
 export interface AppServices {
   storage: ServerStorage;
   rooms: RoomService;
+  bots: BotService;
 }
 
 function errorPayload(error: unknown) {
@@ -46,6 +50,12 @@ function saveMetadata(save: ReturnType<ServerStorage['getSave']>) {
   const metadata: Omit<typeof save, 'payload'> & { payload?: unknown } = { ...save };
   delete metadata.payload;
   return metadata;
+}
+
+function botManagerToken(req: express.Request): string {
+  const token = req.get('x-bot-manager-token')?.trim();
+  if (!token || token.length < 32 || token.length > 256) throw new Error('Valid bot manager token required');
+  return token;
 }
 
 function wireSocket(io: SocketServer, rooms: RoomService): (roomId: string) => void {
@@ -133,11 +143,13 @@ function wireSocket(io: SocketServer, rooms: RoomService): (roomId: string) => v
       broadcastSnapshots(result.room.id);
       return result;
     });
-    handle('chat:send', (payload) => {
+    handle('chat:send', async (payload) => {
       const parsed = chatSchema.parse(payload);
-      const entry = rooms.chat(parsed);
-      io.to(parsed.roomId).emit('chat:message', entry);
-      return entry;
+      const result = await rooms.chat(parsed);
+      io.to(parsed.roomId).emit('chat:message', result.entry);
+      for (const reply of result.replies) io.to(parsed.roomId).emit('chat:message', reply);
+      broadcastSnapshots(parsed.roomId);
+      return result.entry;
     });
 
     socket.on('disconnect', () => {
@@ -159,7 +171,8 @@ export function createApp(options: {
   log?: (event: Record<string, unknown>) => void;
 } = {}) {
   const storage = options.storage ?? new ServerStorage();
-  const rooms = new RoomService(storage, {
+  const bots = new BotService(storage);
+  const rooms = new RoomService(storage, bots, {
     now: options.now,
     actionTimeoutMs: options.actionTimeoutMs,
     sessionTokenTtlDays: options.sessionTokenTtlDays,
@@ -204,6 +217,72 @@ export function createApp(options: {
 
   app.get('/api/providers', (_req, res) => {
     res.json({ providers: listProviders() });
+  });
+
+  app.get('/api/bots/presets', (_req, res) => {
+    res.json({ presets: bots.listPresets() });
+  });
+
+  app.get('/api/bots', (req, res, next) => {
+    try {
+      res.json({ profiles: bots.listProfiles(botManagerToken(req)) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/bots', (req, res, next) => {
+    try {
+      const parsed = botCreateSchema.parse(req.body);
+      const result = bots.createFromPreset({
+        ...parsed,
+        managerToken: botManagerToken(req),
+      });
+      res.status(201).json({ profile: result.profile });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/bots/:profileId', (req, res, next) => {
+    try {
+      const parsed = botUpdateSchema.parse(req.body);
+      const profile = bots.updateProfile({
+        profileId: req.params.profileId,
+        managerToken: botManagerToken(req),
+        patch: parsed.patch,
+      });
+      res.json({ profile });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/bots/:profileId', (req, res, next) => {
+    try {
+      bots.deleteProfile({
+        profileId: req.params.profileId,
+        managerToken: botManagerToken(req),
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/bots/:profileId/dashboard', (req, res, next) => {
+    try {
+      const managerToken = botManagerToken(req);
+      const profile = bots.getManagedProfile(req.params.profileId, managerToken);
+      res.json({
+        profile,
+        growth: bots.getGrowthStats(profile.id),
+        usage: bots.getUsageAnalytics(profile.id),
+        memories: bots.listMemories({ profileId: profile.id, managerToken, limit: 50 }),
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post('/api/provider-test', async (req, res, next) => {
@@ -351,7 +430,7 @@ export function createApp(options: {
     res.status(status).json(errorPayload(error));
   });
 
-  return { app, server, io, services: { storage, rooms } satisfies AppServices };
+  return { app, server, io, services: { storage, rooms, bots } satisfies AppServices };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

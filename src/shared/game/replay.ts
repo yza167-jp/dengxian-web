@@ -10,6 +10,7 @@ const replayAiSchema = z.object({
   difficulty: z.enum(['easy', 'normal', 'hard']),
   persona: z.enum(['steady', 'bold', 'suspicious', 'selfish', 'guardian']),
   thinking: z.boolean().optional(),
+  botProfileId: z.string().min(1).max(120).optional(),
 }).strict();
 const replaySeatSchema = z.object({
   id: z.string().min(1).optional(),

@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { BOT_DIFFICULTIES, BOT_PERSONAS, BOT_PROVIDERS } from '../shared/bots';
 import type { GameAction, GameView } from '../shared/game/types';
 
-export const providerSchema = z.enum(['local-bot', 'deepseek', 'openai-compatible']);
-export const difficultySchema = z.enum(['easy', 'normal', 'hard']);
-export const personaSchema = z.enum(['steady', 'bold', 'suspicious', 'selfish', 'guardian']);
+export const providerSchema = z.enum(BOT_PROVIDERS);
+export const difficultySchema = z.enum(BOT_DIFFICULTIES);
+export const personaSchema = z.enum(BOT_PERSONAS);
 export const characterSchema = z.enum(['R01', 'R02', 'R03', 'R04', 'R05', 'R06', 'R07']);
 
 export const aiSeatConfigSchema = z.object({
@@ -12,7 +13,31 @@ export const aiSeatConfigSchema = z.object({
   difficulty: difficultySchema.default('normal'),
   persona: personaSchema.default('steady'),
   thinking: z.boolean().optional(),
+  botProfileId: z.string().trim().min(1).max(120).optional(),
 });
+
+const botProfileFieldsSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  title: z.string().trim().min(1).max(80),
+  description: z.string().trim().min(1).max(500),
+  provider: providerSchema,
+  model: z.string().trim().min(1).max(120).nullable(),
+  difficulty: difficultySchema,
+  persona: personaSchema,
+  thinking: z.boolean(),
+  traits: z.array(z.string().trim().min(1).max(40)).max(12),
+  preferences: z.array(z.string().trim().min(1).max(60)).max(12),
+  communicationStyle: z.string().trim().min(1).max(240),
+}).strict();
+
+export const botCreateSchema = z.object({
+  presetId: z.string().trim().min(1).max(120),
+  overrides: botProfileFieldsSchema.partial().optional(),
+}).strict();
+
+export const botUpdateSchema = z.object({
+  patch: botProfileFieldsSchema.partial(),
+}).strict();
 
 export const createRoomSchema = z.object({
   hostName: z.string().trim().min(1).max(40).default('房主'),
@@ -56,6 +81,7 @@ export const swapSeatSchema = tokenSeatSchema.extend({
 export const addBotSchema = tokenSeatSchema.extend({
   name: z.string().trim().min(1).max(40).default('AI 修士'),
   ai: aiSeatConfigSchema.default({ provider: 'local-bot', difficulty: 'normal', persona: 'steady' }),
+  botManagerToken: z.string().trim().min(32).max(256).optional(),
 });
 
 export const removeBotSchema = tokenSeatSchema.extend({

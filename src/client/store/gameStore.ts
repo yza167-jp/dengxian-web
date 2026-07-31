@@ -4,6 +4,7 @@ import type { Socket } from 'socket.io-client';
 import { applyAction, createGame, parseGameState } from '../../shared/game/engine';
 import { chooseHeuristicAction, publicBotMessage } from '../../shared/game/bot';
 import { getViewForSeat } from '../../shared/game/view';
+import type { BotPreset, BotProfileFields } from '../../shared/bots';
 import type {
   AiSeatConfig,
   CharacterId,
@@ -17,6 +18,8 @@ import type {
 import { RULES_DIGEST } from '../../shared/data/content';
 import {
   clientApi,
+  type BotDashboard,
+  type BotProfile,
   type ClientSession,
   type ProviderDiagnostic,
   type PublicRoom,
@@ -36,6 +39,7 @@ export interface SoloSetup {
   characterId: CharacterId | 'random';
   provider: AiSeatConfig['provider'];
   model: string;
+  botProfileIds: string[];
 }
 
 interface GameStore {
@@ -50,6 +54,9 @@ interface GameStore {
   providers: ProviderDiagnostic[];
   serverSaves: SaveSummary[];
   localSaves: LocalSaveSummary[];
+  botPresets: readonly BotPreset[];
+  botProfiles: BotProfile[];
+  botDashboard: BotDashboard | null;
   chat: ServerChatMessage[];
   selectedCardId: string | null;
   activePanel: 'log' | 'chat';
@@ -77,6 +84,11 @@ interface GameStore {
   sendChat: (message: string) => void;
   refreshDiagnostics: () => Promise<void>;
   refreshSaves: () => Promise<void>;
+  refreshBots: () => Promise<void>;
+  createBot: (presetId: string) => Promise<BotProfile | null>;
+  updateBot: (profileId: string, patch: Partial<BotProfileFields>) => Promise<BotProfile | null>;
+  deleteBot: (profileId: string) => Promise<boolean>;
+  loadBotDashboard: (profileId: string) => Promise<void>;
   saveLocalNamed: (name: string) => void;
   loadLocalSave: (id: string) => boolean;
   deleteLocalSave: (id: string) => void;
@@ -102,11 +114,13 @@ const DEFAULT_SETUP: SoloSetup = {
   characterId: 'random',
   provider: 'local-bot',
   model: '',
+  botProfileIds: [],
 };
 
 const RECENT_SOLO_KEY = 'dengxiantai.recentSolo';
 const LOCAL_SAVES_KEY = 'dengxiantai.localSaves';
 const ONLINE_SESSION_KEY = 'dengxiantai.onlineSession';
+const BOT_MANAGER_TOKEN_KEY = 'dengxiantai.botManagerToken.v1';
 
 export interface LocalSaveSummary {
   id: string;
@@ -142,7 +156,35 @@ function getStorage(kind: 'local' | 'session'): Storage | null {
   return kind === 'local' ? window.localStorage : window.sessionStorage;
 }
 
-function botConfig(index: number, setup: SoloSetup): SeatConfig {
+function getBotManagerToken(): string {
+  const storage = getStorage('local');
+  const existing = storage?.getItem(BOT_MANAGER_TOKEN_KEY);
+  if (existing) return existing;
+  const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
+  storage?.setItem(BOT_MANAGER_TOKEN_KEY, token);
+  return token;
+}
+
+function profileSeatConfig(index: number, profile: BotProfile): SeatConfig {
+  return {
+    id: `seat-${index + 1}`,
+    name: profile.name,
+    kind: 'bot',
+    ai: {
+      provider: profile.provider,
+      model: profile.model ?? undefined,
+      difficulty: profile.difficulty,
+      persona: profile.persona,
+      thinking: profile.thinking,
+      botProfileId: profile.id,
+    },
+  };
+}
+
+function botConfig(index: number, setup: SoloSetup, profiles: BotProfile[] = []): SeatConfig {
+  const selectedProfileId = setup.botProfileIds[index - 1];
+  const profile = profiles.find((candidate) => candidate.id === selectedProfileId);
+  if (profile) return profileSeatConfig(index, profile);
   const personas: Persona[] = ['steady', 'guardian', 'bold', 'suspicious', 'selfish'];
   return {
     id: `seat-${index + 1}`,
@@ -158,7 +200,7 @@ function botConfig(index: number, setup: SoloSetup): SeatConfig {
   };
 }
 
-function buildSoloConfig(setup: SoloSetup): CreateGameConfig {
+function buildSoloConfig(setup: SoloSetup, profiles: BotProfile[] = []): CreateGameConfig {
   return {
     mode: 'solo',
     seed: setup.seed,
@@ -170,7 +212,7 @@ function buildSoloConfig(setup: SoloSetup): CreateGameConfig {
         kind: 'human',
         characterId: setup.characterId === 'random' ? undefined : setup.characterId,
       },
-      ...Array.from({ length: setup.playerCount - 1 }, (_, index) => botConfig(index + 1, setup)),
+      ...Array.from({ length: setup.playerCount - 1 }, (_, index) => botConfig(index + 1, setup, profiles)),
     ],
   };
 }
@@ -315,7 +357,7 @@ function advanceBots(
       ? chooseHeuristicAction(next, actorView, actor.id)
       : { action: actorView.legalActions[0]!, publicRationale: '自动处理等待动作。' };
     next = applyAction(next, decision.action);
-    if (actor.kind === 'bot') {
+    if (actor.kind === 'bot' && decision.action.type === 'READY_NEGOTIATION') {
       chat.push({
         id: `local-chat-${next.gameId}-${next.revision}-${actor.id}`,
         seatId: actor.id,
@@ -343,6 +385,35 @@ function errorMessage(error: unknown, fallback: string): string {
   }
 }
 
+function localConversationReplies(
+  state: GameState,
+  message: string,
+): ServerChatMessage[] {
+  const bots = state.players.filter((player) => player.kind === 'bot');
+  if (bots.length === 0) return [];
+  const start = (state.revision + message.length) % bots.length;
+  return [bots[start], bots[(start + 1) % bots.length]]
+    .filter((bot, index, list) => bot && list.findIndex((candidate) => candidate?.id === bot.id) === index)
+    .map((bot, index) => {
+      const persona = bot!.ai?.persona ?? 'steady';
+      const messageByPersona: Record<Persona, string> = {
+        steady: `我听见了。先看主台 ${state.platform.mainProgress}/${state.platform.mainRequired}，再决定这一轮各自投入。`,
+        guardian: `可以谈，但共同底线是别让裂痕超过 ${state.platform.cracks}/3；我会优先保住仙台。`,
+        bold: `承诺要配得上投入。你若肯压上资源，我也愿意把这一轮推快。`,
+        suspicious: `我会记住这句话，并和本轮揭晓结果核对；先别要求我提前摊牌。`,
+        selfish: `这笔合作要有对价。说清你能承担什么，我再表态。`,
+      };
+      return {
+        id: `local-talk-${state.gameId}-${state.revision}-${bot!.id}-${index}-${Date.now()}`,
+        seatId: bot!.id,
+        name: bot!.name,
+        message: messageByPersona[persona],
+        createdAt: new Date().toISOString(),
+        round: state.round,
+      };
+    });
+}
+
 async function attempt<T>(
   set: StoreSet,
   fallback: string,
@@ -368,6 +439,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   providers: [],
   serverSaves: [],
   localSaves: summarizeLocalSaves(),
+  botPresets: [],
+  botProfiles: [],
+  botDashboard: null,
   chat: [],
   selectedCardId: null,
   activePanel: 'log',
@@ -383,10 +457,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   startSolo: async () => {
     const setup = get().setup;
+    const profiles = get().botProfiles;
     get().socket?.disconnect();
-    if (setup.provider === 'local-bot') {
+    const usesPersistentProfiles = setup.botProfileIds
+      .slice(0, setup.playerCount - 1)
+      .some((profileId) => profiles.some((profile) => profile.id === profileId));
+    if (setup.provider === 'local-bot' && !usesPersistentProfiles) {
       try {
-        const initial = createGame(buildSoloConfig(setup));
+        const initial = createGame(buildSoloConfig(setup, profiles));
         const advanced = advanceBots(initial, HUMAN_SEAT);
         saveRecentSolo(advanced.state, HUMAN_SEAT, advanced.chat);
         set({
@@ -408,7 +486,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     }
 
-    set({ status: `正在创建 ${setup.provider} 私房单人局...`, error: null });
+    set({
+      status: usesPersistentProfiles ? '正在唤醒跨局保留的 Bot 道友...' : `正在创建 ${setup.provider} 私房单人局...`,
+      error: null,
+    });
     const session = await attempt(set, '无法创建 Provider 私房。', () => clientApi.createRoom({
       hostName: setup.playerName.trim() || DEFAULT_SETUP.playerName,
       maxSeats: setup.playerCount,
@@ -417,18 +498,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }));
     if (!session) return false;
     attachOnlineSession(session, set);
-    set({ status: `已创建 ${setup.provider} 私房，正在配置 AI 席位。` });
-    const personas: Persona[] = ['steady', 'guardian', 'bold', 'suspicious', 'selfish'];
+    set({ status: '私房已创建，正在按席位载入 Bot 人设与记忆。' });
     for (let index = 1; index < setup.playerCount; index += 1) {
+      const configured = botConfig(index, setup, profiles);
       const snapshot = await attempt(set, '无法添加 Provider Bot。', () => clientApi.addBot(session, {
-        name: ['玄霄', '扶摇', '照夜', '青璃', '问石'][index - 1] ?? `道友${index}`,
-        ai: {
-          provider: setup.provider,
-          model: setup.model.trim() || undefined,
-          difficulty: setup.difficulty,
-          persona: personas[(index + personas.indexOf(setup.persona)) % personas.length] ?? 'steady',
-          thinking: setup.difficulty === 'hard',
-        },
+        name: configured.name,
+        ai: configured.ai!,
+        botManagerToken: configured.ai?.botProfileId ? getBotManagerToken() : undefined,
       }));
       if (!snapshot) return false;
       session.snapshot = snapshot;
@@ -442,7 +518,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!started) return false;
     session.snapshot = started;
     applySnapshot(started, set);
-    set({ status: `${setup.provider} 私房已启动；服务异常时自动改由本地 Bot 接管。` });
+    set({
+      status: usesPersistentProfiles
+        ? 'Bot 道友已携带既往记忆入局；服务异常时自动改由本地策略接管。'
+        : `${setup.provider} 私房已启动；服务异常时自动改由本地 Bot 接管。`,
+    });
     return true;
   },
 
@@ -527,9 +607,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
     const count = get().room?.seats.length ?? 1;
+    const profile = ai.botProfileId
+      ? get().botProfiles.find((candidate) => candidate.id === ai.botProfileId)
+      : null;
     const snapshot = await attempt(set, '添加 AI 失败。', () => emitRoomSnapshot(socket, 'room:add-bot', session, {
-      name: `${ai.provider === 'local-bot' ? '本地' : ai.provider === 'deepseek' ? 'DeepSeek' : '兼容'} AI ${count}`,
+      name: profile?.name ?? `${ai.provider === 'local-bot' ? '本地' : ai.provider === 'deepseek' ? 'DeepSeek' : '兼容'} AI ${count}`,
       ai,
+      botManagerToken: profile ? getBotManagerToken() : undefined,
     }));
     if (snapshot) applySnapshot(snapshot, set);
   },
@@ -621,7 +705,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const trimmed = message.trim();
     if (!trimmed) return;
     if (!session || !socket) {
-      set({ error: '离线单人局只能查看 Bot 公开发言；真人聊天仅用于在线房间。' });
+      const { localState, humanSeatId } = get();
+      if (!localState) {
+        set({ error: '当前没有可交谈的对局。' });
+        return;
+      }
+      const human = localState.players.find((player) => player.id === humanSeatId);
+      const humanMessage: ServerChatMessage = {
+        id: `local-talk-${localState.gameId}-${localState.revision}-${humanSeatId}-${Date.now()}`,
+        seatId: humanSeatId,
+        name: human?.name ?? '你',
+        message: trimmed,
+        createdAt: new Date().toISOString(),
+        round: localState.round,
+      };
+      const replies = localConversationReplies(localState, trimmed);
+      const chat = [...get().chat, humanMessage, ...replies].slice(-100);
+      saveRecentSolo(localState, humanSeatId, chat);
+      set({ chat, status: `已向 ${replies.length} 位 Bot 道友公开发言。`, error: null });
       return;
     }
     socket.emit('chat:send', {
@@ -658,6 +759,74 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } catch (error) {
       set({ serverSaves: [], localSaves: summarizeLocalSaves(), error: error instanceof Error ? error.message : '无法读取服务端存档。' });
     }
+  },
+
+  refreshBots: async () => {
+    const managerToken = getBotManagerToken();
+    try {
+      const [botPresets, botProfiles] = await Promise.all([
+        clientApi.botPresets(),
+        clientApi.botProfiles(managerToken),
+      ]);
+      set({ botPresets, botProfiles, status: `已载入 ${botProfiles.length} 位长期 Bot 道友与 ${botPresets.length} 套预设。`, error: null });
+    } catch (error) {
+      set({
+        botPresets: [],
+        botProfiles: [],
+        error: errorMessage(error, '无法读取 Bot 管理资料。'),
+      });
+    }
+  },
+
+  createBot: async (presetId) => {
+    const result = await attempt(set, '创建 Bot 失败。', () =>
+      clientApi.createBot(getBotManagerToken(), { presetId }));
+    if (!result) return null;
+    set((state) => ({
+      botProfiles: [result.profile, ...state.botProfiles.filter((profile) => profile.id !== result.profile.id)],
+      botDashboard: null,
+      status: `已从预设创建“${result.profile.name}”。`,
+      error: null,
+    }));
+    return result.profile;
+  },
+
+  updateBot: async (profileId, patch) => {
+    const result = await attempt(set, '保存 Bot 设定失败。', () =>
+      clientApi.updateBot(getBotManagerToken(), profileId, patch));
+    if (!result) return null;
+    set((state) => ({
+      botProfiles: state.botProfiles.map((profile) => profile.id === profileId ? result.profile : profile),
+      botDashboard: state.botDashboard?.profile.id === profileId
+        ? { ...state.botDashboard, profile: result.profile }
+        : state.botDashboard,
+      status: `“${result.profile.name}”的人设已保存。`,
+      error: null,
+    }));
+    return result.profile;
+  },
+
+  deleteBot: async (profileId) => {
+    const deleted = await attempt(set, '删除 Bot 失败。', () =>
+      clientApi.deleteBot(getBotManagerToken(), profileId));
+    if (deleted === null) return false;
+    set((state) => ({
+      botProfiles: state.botProfiles.filter((profile) => profile.id !== profileId),
+      botDashboard: state.botDashboard?.profile.id === profileId ? null : state.botDashboard,
+      setup: {
+        ...state.setup,
+        botProfileIds: state.setup.botProfileIds.map((id) => id === profileId ? '' : id),
+      },
+      status: 'Bot 已从管理面板删除；已完成的对局记录仍保留于房间事件中。',
+      error: null,
+    }));
+    return true;
+  },
+
+  loadBotDashboard: async (profileId) => {
+    const dashboard = await attempt(set, '读取 Bot 数据失败。', () =>
+      clientApi.botDashboard(getBotManagerToken(), profileId));
+    if (dashboard) set({ botDashboard: dashboard, status: `已载入“${dashboard.profile.name}”的数据与记忆。`, error: null });
   },
 
   saveLocalNamed: (name) => {

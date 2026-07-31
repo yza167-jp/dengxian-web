@@ -148,6 +148,66 @@ export class ServerStorage {
       this.db.exec("ALTER TABLE commands ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'");
     }
     this.db.exec("INSERT OR IGNORE INTO migrations (id, applied_at) VALUES (2, datetime('now'))");
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS bot_profiles (
+        id TEXT PRIMARY KEY,
+        preset_id TEXT,
+        name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT,
+        difficulty TEXT NOT NULL,
+        persona TEXT NOT NULL,
+        thinking INTEGER NOT NULL DEFAULT 0,
+        traits_json TEXT NOT NULL,
+        preferences_json TEXT NOT NULL,
+        communication_style TEXT NOT NULL,
+        manager_token_hash TEXT NOT NULL,
+        level INTEGER NOT NULL DEFAULT 1,
+        xp INTEGER NOT NULL DEFAULT 0,
+        games INTEGER NOT NULL DEFAULT 0,
+        ascensions INTEGER NOT NULL DEFAULT 0,
+        decisions INTEGER NOT NULL DEFAULT 0,
+        messages INTEGER NOT NULL DEFAULT 0,
+        fallback INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_bot_profiles_updated
+        ON bot_profiles (deleted_at, updated_at DESC);
+      CREATE TABLE IF NOT EXISTS bot_memories (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        content TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (profile_id) REFERENCES bot_profiles(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_bot_memories_profile_created
+        ON bot_memories (profile_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS bot_usage (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT,
+        cache_status TEXT NOT NULL CHECK (cache_status IN ('hit', 'miss')),
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+        latency_ms INTEGER NOT NULL DEFAULT 0,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        used_fallback INTEGER NOT NULL DEFAULT 0,
+        usd_micros INTEGER NOT NULL DEFAULT 0,
+        metadata_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (profile_id) REFERENCES bot_profiles(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_bot_usage_profile_created
+        ON bot_usage (profile_id, created_at DESC);
+      INSERT OR IGNORE INTO migrations (id, applied_at) VALUES (3, datetime('now'));
+    `);
   }
 
   upsertRoom(input: { id: string; code: string; status: string; hostSeatId: string; payload: unknown }): StoredRoom {
