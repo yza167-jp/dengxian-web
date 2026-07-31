@@ -14,9 +14,9 @@
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm run smoke:production` | Pass | 随机隔离端口真实启动构建产物；health、首页、Provider 脱敏元数据和天劫卡资源均通过，哨兵密钥未出现在公共响应 |
-| Fresh clone smoke | Pass | 独立无硬链接 clone 已执行 `npm ci`、构建并在无 `.env` 下启动；最终提交 `194cfa9` 又由 GitHub runner 重新 checkout、安装、验证和构建 |
+| Fresh clone smoke | Pass | 独立无硬链接 clone 已执行 `npm ci`、构建并在无 `.env` 下启动；发布实现提交 `194cfa9` 又由 GitHub runner 重新 checkout、安装、验证和构建 |
 | `npm run test:e2e` | Pass | Chromium 16/16 在最终 GitHub Actions run #19 通过；本轮界面人工验收仍按用户指定使用 Safari |
-| `npm run verify` | Pass | 最终提交 `194cfa9` 在 GitHub Actions run #19 完整通过同步、素材校验、audit、typecheck、lint、83 项 Vitest、120 局模拟、构建、生产烟测与 16 项 E2E |
+| `npm run verify` | Pass | 发布实现提交 `194cfa9` 在 GitHub Actions run #19 完整通过同步、素材校验、audit、typecheck、lint、83 项 Vitest、120 局模拟、构建、生产烟测与 16 项 E2E |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
 | `docker build` | Blocked externally | Docker Desktop daemon 已启动；隔离 `DOCKER_CONFIG` 后，匿名 token 与公共 ECR 请求仍由 daemon 端返回 EOF，确认阻塞在本机 Docker registry/代理链路；未把该外部失败声称为镜像通过 |
 | CI Docker release smoke | Pass | GitHub Actions run #19 已真实构建镜像、启动非 root 容器、等待 `HEALTHCHECK`，并成功探测 health、首页与上游卡牌资源 |
