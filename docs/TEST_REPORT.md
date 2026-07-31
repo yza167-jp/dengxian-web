@@ -9,7 +9,7 @@
 | `npm audit` | Pass; later retry network-blocked | 最近一次成功的在线检查为 0 vulnerabilities；锁文件未变化，随后重试因 npm registry TLS 建连中断而无法取得新结果 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 7 files，81 tests |
+| `npm test` | Pass | 7 files，82 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
@@ -53,6 +53,14 @@ Playwright 覆盖：
 8. 在设置页输入仅本次请求使用的管理员诊断令牌，真实调用固定 DeepSeek 探针并显示 `deepseek-v4-flash`、1410ms、JSON 模式；请求完成后令牌字段立即清空，截图保存为 `safari-provider-probe.jpg`。
 9. 使用 `localhost` 与 `127.0.0.1` 两个独立 Safari 会话创建和加入同一房间，关闭房主私密窗口后确认客方在宽限期结束时自动成为房主、旧房主保留离线座位，且客方立即获得 AI 席位配置与开局权限；截图保存为 `safari-host-takeover.png`。
 10. 新建六席在线房间，以两个独立 Safari 私密会话加入两名真人、补入四名本地 Bot、双方准备并成功开局；环坛同时显示六个唯一人物席位，天劫卡和两枚不小于 44px 的响应按钮完整可见，截图保存为 `safari-six-seat-online.png`。
+
+随后针对环坛式对局完成一次独立的三轮 Safari 回归，证据与逐步健康度记录在
+[`docs/audits/2026-07-31-safari-ring-table/REPORT.md`](audits/2026-07-31-safari-ring-table/REPORT.md)：
+
+1. 在 1260×768 正常窗口连续完成三轮并进入第四轮，覆盖自由中文发言、Bot 公开回应、秘密计划、探索三选一、贡献与雷击窗口。
+2. 秘密计划的投入按钮在桌面布局提高到 52px，较窄布局保持 48px；大幅行动卡与按钮不再出现“大背景块嵌套过小按钮”的比例失衡。
+3. 使用「窥天简」后自动显示下一张天劫的上游卡面、名称、阶段、效果和抗劫需求；预览可收起并通过私密入口再次打开。
+4. 服务端/规则层新增隔离测试，确认下一张天劫名称只进入使用者 `privateNotes`，不会进入其他座位私有视图或公开事件。
 
 ## 隐私与服务端权威
 

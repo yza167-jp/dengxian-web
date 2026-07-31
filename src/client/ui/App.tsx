@@ -12,7 +12,16 @@ import {
   RULES_DIGEST,
 } from '../../shared/data/content';
 import type { BotProfileFields } from '../../shared/bots';
-import type { ActionChoice, CharacterId, GameAction, GameOutcome, GameView, OpportunityId, PublicPlayerView } from '../../shared/game/types';
+import type {
+  ActionChoice,
+  CalamityId,
+  CharacterId,
+  GameAction,
+  GameOutcome,
+  GameView,
+  OpportunityId,
+  PublicPlayerView,
+} from '../../shared/game/types';
 import { clientApi, type ProviderTestResult } from '../api/clientApi';
 import { ritualAudio } from '../audio/sound';
 import { useGameStore } from '../store/gameStore';
@@ -111,6 +120,16 @@ function actionArtPath(choice: ActionChoice): string {
 
 function cardArtPath(cardId: string): string {
   return `/assets/upstream/cards/${encodeURIComponent(cardId)}.webp`;
+}
+
+function calamityPreviewIdFromNotes(notes: string[]): CalamityId | null {
+  for (const note of notes) {
+    const match = /^窥天简：下一张天劫是 (T\d{2})/.exec(note);
+    if (match?.[1] && CALAMITY_BY_ID.has(match[1] as CalamityId)) {
+      return match[1] as CalamityId;
+    }
+  }
+  return null;
 }
 
 function actionCardId(action: GameAction): OpportunityId | null {
@@ -1141,6 +1160,14 @@ function PlayerHand({ view }: { view: GameView }) {
   const selfPlayer = view.players.find((player) => player.id === view.seatId) ?? null;
   const selfCharacter = selfPlayer ? CHARACTER_BY_ID.get(selfPlayer.characterId) : null;
   const hand = view.self?.hand ?? [];
+  const privateNotes = view.self?.privateNotes ?? [];
+  const privateNotesSignature = privateNotes.join('\u0000');
+  const privateCalamityId = calamityPreviewIdFromNotes(privateNotes);
+  const privateCalamity = privateCalamityId ? CALAMITY_BY_ID.get(privateCalamityId) ?? null : null;
+  const [privateIntelOpen, setPrivateIntelOpen] = useState(false);
+  useEffect(() => {
+    setPrivateIntelOpen(privateNotes.length > 0);
+  }, [privateNotes.length, privateNotesSignature]);
   return (
     <section className={`hand-zone${hand.length === 0 ? ' is-empty-hand' : ''}`} aria-label="私有区域">
       <article
@@ -1176,8 +1203,49 @@ function PlayerHand({ view }: { view: GameView }) {
               <small>{fate ? `${fate.mainFate} · ${fate.obsession}` : '当前没有私有目标'}</small>
             </span>
           </div>
+          {privateNotes.length > 0 ? (
+            <button className="private-intel-toggle" type="button" onClick={() => setPrivateIntelOpen(true)}>
+              查看私密天机 · {privateNotes.length}
+            </button>
+          ) : null}
         </div>
       </article>
+      {privateIntelOpen && privateNotes.length > 0 ? (
+        <aside className="private-intel-overlay" aria-label="私密天机">
+          <header>
+            <span>
+              <strong>私密天机</strong>
+              <small>仅你可见，不会进入公开谈判。</small>
+            </span>
+            <button type="button" onClick={() => setPrivateIntelOpen(false)}>记下并收起</button>
+          </header>
+          {privateCalamityId && privateCalamity ? (
+            <article className="private-calamity-preview">
+              <img
+                src={cardArtPath(privateCalamityId)}
+                alt={`${privateCalamity.name} 下一张天劫牌`}
+                loading="eager"
+              />
+              <span>
+                <small>窥天简 · 下一劫</small>
+                <strong>{privateCalamity.name}</strong>
+                <span>{privateCalamity.stage}</span>
+                <p>{privateCalamity.effect}</p>
+                <em>
+                  抗劫需求 {privateCalamity.demand[view.players.length as 4 | 5 | 6]}
+                </em>
+              </span>
+            </article>
+          ) : null}
+          {privateNotes.some((note) => !note.startsWith('窥天简：')) ? (
+            <ul className="private-intel-notes">
+              {privateNotes
+                .filter((note) => !note.startsWith('窥天简：'))
+                .map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          ) : null}
+        </aside>
+      ) : null}
       {hand.length > 0 ? (
         <div className="cards">
           {hand.map((cardId) => {

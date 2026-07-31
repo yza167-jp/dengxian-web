@@ -1825,7 +1825,13 @@ function applyCard(state: GameState, player: PlayerState, action: GameAction): v
         if (target) state.roundModifiers.blockedWindowSeats.push(target.id);
         break;
       case 'C25':
-        if (state.calamityDeck[0]) player.privateNotes.push(`窥天简：下一张天劫是 ${state.calamityDeck[0]}`);
+        if (state.calamityDeck[0]) {
+          const nextCalamityId = state.calamityDeck[0];
+          const nextCalamity = CALAMITY_BY_ID.get(nextCalamityId);
+          player.privateNotes.push(
+            `窥天简：下一张天劫是 ${nextCalamityId}${nextCalamity ? `「${nextCalamity.name}」` : ''}`,
+          );
+        }
         break;
       case 'C27':
         player.spirit -= 1;

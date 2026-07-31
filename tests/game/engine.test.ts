@@ -305,6 +305,37 @@ describe('deterministic engine', () => {
     expect(state.players[0]!.roundFlags).toContain(`new-card:${knownCard}`);
   });
 
+  it('keeps 窥天简 preview private and names the next calamity for the player', () => {
+    const state = createGame(config(4, 20260731));
+    const owner = state.players[0]!;
+    const nextCalamityId = state.calamityDeck[0]!;
+    const nextCalamity = CALAMITIES.find((calamity) => calamity.id === nextCalamityId)!;
+    state.opportunityDeck = state.opportunityDeck.filter((cardId) => cardId !== 'C25');
+    owner.hand.push('C25');
+    owner.opportunityUsedThisRound = false;
+    owner.roundFlags = [];
+    state.phase = 'window';
+    state.phaseLabel = '天劫揭示响应';
+    state.window = {
+      timing: 'after_calamity',
+      order: [owner.id],
+      cursor: 0,
+    };
+
+    const peek = getLegalActions(state, owner.id).find(
+      (action) => action.type === 'PLAY_CARD' && action.payload.cardId === 'C25',
+    )!;
+    const result = applyAction(state, peek);
+    const privateNote = `窥天简：下一张天劫是 ${nextCalamityId}「${nextCalamity.name}」`;
+
+    expect(result.players[0]!.privateNotes).toContain(privateNote);
+    expect(getViewForSeat(result, owner.id).self?.privateNotes).toContain(privateNote);
+    expect(getViewForSeat(result, result.players[1]!.id).self?.privateNotes).not.toContain(
+      privateNote,
+    );
+    expect(result.events.some((event) => event.publicText.includes(nextCalamity.name))).toBe(false);
+  });
+
   it('opens a real counter window for 假死丹 before targeted effects resolve', () => {
     let state = advanceUntil(
       createGame(config(4, 8801)),
