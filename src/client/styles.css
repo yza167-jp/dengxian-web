@@ -2367,6 +2367,9 @@ textarea {
 
 .mofa-action-dock.is-secret-plan .mofa-plan-card .mofa-action-art {
   min-height: 0;
+  background: rgba(3, 3, 4, 0.86);
+  object-fit: contain;
+  object-position: center;
 }
 
 .plan-action-options .plan-action-option {
@@ -3353,7 +3356,8 @@ textarea {
 .mofa-card-action-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 190px));
+  justify-content: center;
   gap: 10px;
   overflow-y: auto;
 }
@@ -3390,10 +3394,12 @@ textarea {
 }
 
 .mofa-card-action img {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   min-height: 0;
   height: 100%;
   max-height: 190px;
+  justify-self: center;
   aspect-ratio: 63 / 88;
   border-radius: var(--radius-xs);
   background: rgba(3, 3, 4, 0.9);

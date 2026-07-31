@@ -6,7 +6,7 @@
 
 | 检查 | 结果 | 证据 |
 |---|---|---|
-| `npm audit` | Last successful lock check: Pass | 0 vulnerabilities；本轮重试被 npm registry TLS 中断，依赖与 lockfile 未变化 |
+| `npm audit` | Pass | 0 vulnerabilities |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
 | `npm test` | Pass | 6 files，74 tests |
@@ -48,6 +48,7 @@ Playwright 覆盖：
 4. 秘密计划的 1–3 灵力按钮不小于 44px，四张行动卡与确认按钮保持同屏。
 5. 连续两次主动选择探索，第二次确认抽到的三张机缘以独立上游卡面横向展示并可直接点击保留。
 6. 返回 Bot 面板后确认 DeepSeek Bot 的决策、发言、经验、缓存命中、token、预估金额和四条公开记忆均已更新。
+7. 后续在 Safari 响应式设计模式复核 1024×768 与 1280×720：秘密行动图完整显示、不裁切卡名；单张机缘/法宝响应不再撑满大底板，三张探索牌保持居中的定宽卡牌画廊。退出响应式模式后又从新局第一轮重新走到探索，并刷新 `safari-opportunity-gallery.jpg` 作为正常 Safari 窗口证据。
 
 ## 隐私与服务端权威
 
