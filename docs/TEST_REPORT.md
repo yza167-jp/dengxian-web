@@ -13,11 +13,11 @@
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
-| Fresh clone smoke | Pass | 从远端 `c81f26a` 浅克隆后执行 `npm ci`、复制 `.env.example`、构建并启动；health、首页、天劫卡资源均为 200 |
+| Fresh clone smoke | Pass | 从远端 `8338b27` 浅克隆后执行 `npm ci`、构建并在无 `.env` 下启动；health、首页、天劫卡资源均为 200 |
 | `npm run test:e2e` | Historical pass | Chromium 16/16；本轮按用户指定只做 Safari 视觉验收，未重跑 Playwright |
 | `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过 npm audit、typecheck、lint、Vitest、模拟与构建；按用户指定使用 Safari，未重跑 Playwright |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
-| `docker build` | Not run | Docker CLI 可用但本机 daemon 未启动 |
+| `docker build` | Blocked externally | Docker Desktop daemon 已启动；构建到 `node:24-bookworm-slim` 元数据拉取时停滞，直接 `docker pull` 也卡在本机 Docker registry 凭据/代理链路，未把该外部失败声称为镜像通过 |
 
 120 局模拟结果：664 个总轮次，平均 5.53 轮，所有动作均来自当前修订的合法动作集合，所有对局在有界步数内终止。本次固定策略样本全部飞升，不应将该比率解释为平衡性或真人胜率结论。
 
@@ -87,4 +87,4 @@ Playwright 覆盖：
 
 Node 24 当前会为 `node:sqlite` 打印 ExperimentalWarning；数据库 API 在本项目所需范围内通过单测、生产启动和 E2E。该提示不是测试失败，但升级 Node 时应重新运行迁移与恢复测试。
 
-本机 Docker daemon 未运行，因此没有声称镜像已实际构建；Dockerfile 与 Compose 配置均已做静态/配置预检，目标环境仍应执行一次 `docker compose up --build`。
+本机 Docker Desktop daemon 已运行，`docker info` 与 Compose 配置均可用；但真实构建在拉取 `node:24-bookworm-slim` 元数据时持续停滞，直接拉取在中止时报告 credential helper 被打断。宿主机可直接访问 Docker registry，而 daemon 配置了本机代理，说明阻塞位于当前 Docker Desktop 的 registry 凭据/代理链路，不是项目 Dockerfile 的静态解析。未修改用户的网络或凭据设置，目标环境仍应执行一次 `docker compose up --build`。

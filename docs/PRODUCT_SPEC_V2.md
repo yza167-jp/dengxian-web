@@ -7,7 +7,7 @@
 规则版本：v0.1 忠实模式
 替代文件：根目录 `dengxiantai-web-build-spec.md`
 
-实现状态：本文件定义目标产品，不等同于当前完成度。当前仓库状态见 `docs/ARCHITECTURE.md` 与 `docs/TEST_REPORT.md`；截至 2026-07-31，生产启动、E2E、lint、客户端/服务端联机路径、重启恢复、外部 Provider mock 降级、无 Key 私房单人流程与真实 DeepSeek 最小调用均已有验证。Docker daemon 内镜像启动仍受当前本机环境限制。
+实现状态：本文件定义目标产品，不等同于当前完成度。当前仓库状态见 `docs/ARCHITECTURE.md` 与 `docs/TEST_REPORT.md`；截至 2026-07-31，生产启动、E2E、lint、客户端/服务端联机路径、重启恢复、外部 Provider mock 降级、无 Key 私房单人流程与真实 DeepSeek 最小调用均已有验证。Docker Desktop daemon 已启动，但当前机器的 Docker registry 凭据/代理链路阻塞了基础镜像拉取，尚未形成实际镜像启动证据。
 
 ## 产品目标
 
