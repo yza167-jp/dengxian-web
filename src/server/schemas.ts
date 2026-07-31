@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { BOT_DIFFICULTIES, BOT_PERSONAS, BOT_PROVIDERS } from '../shared/bots';
-import type { GameAction, GameView } from '../shared/game/types';
 
 export const providerSchema = z.enum(BOT_PROVIDERS);
 export const difficultySchema = z.enum(BOT_DIFFICULTIES);
@@ -107,20 +106,6 @@ export const getSnapshotSchema = z.object({
   seatId: z.string().trim().min(1).optional(),
   seatToken: z.string().trim().min(16).optional(),
 }).refine((value) => (value.seatId && value.seatToken) || (!value.seatId && !value.seatToken), 'seatId and seatToken must be provided together');
-
-export const aiMoveSchema = z.object({
-  seatConfig: aiSeatConfigSchema,
-  view: z.custom<GameView>((value) => typeof value === 'object' && value !== null),
-  legalActions: z.array(z.object({
-    id: z.string(),
-    type: z.string(),
-    seatId: z.string(),
-    label: z.string(),
-    description: z.string().optional(),
-    payload: z.record(z.string(), z.unknown()).optional(),
-  }).passthrough()).min(1).transform((actions) => actions as GameAction[]),
-  rulesDigest: z.string().max(4_000).optional(),
-});
 
 export const providerTestSchema = z.object({
   provider: z.enum(['deepseek', 'openai-compatible']).default('deepseek'),
