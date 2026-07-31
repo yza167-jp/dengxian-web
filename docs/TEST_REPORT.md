@@ -9,7 +9,7 @@
 | `npm audit` | Pass; later retry network-blocked | 最近一次成功的在线检查为 0 vulnerabilities；锁文件未变化，随后重试因 npm registry TLS 建连中断而无法取得新结果 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 7 files，82 tests |
+| `npm test` | Pass | 7 files，83 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm run smoke:production` | Pass | 随机隔离端口真实启动构建产物；health、首页、Provider 脱敏元数据和天劫卡资源均通过，哨兵密钥未出现在公共响应 |
@@ -18,6 +18,7 @@
 | `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过最近一次可用的 npm audit、typecheck、lint、Vitest、模拟、构建与生产烟测；随后 audit 重试受 registry 网络阻塞；按用户指定使用 Safari，未重跑 Playwright |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
 | `docker build` | Blocked externally | Docker Desktop daemon 已启动；隔离 `DOCKER_CONFIG` 后，匿名 token 与公共 ECR 请求仍由 daemon 端返回 EOF，确认阻塞在本机 Docker registry/代理链路；未把该外部失败声称为镜像通过 |
+| CI Docker release smoke | Added; remote run pending | CI 会真实构建镜像、启动容器、等待 `HEALTHCHECK`，再探测 health、首页和上游卡牌；本地测试锁定工作流契约，首次远端运行需等待 GitHub TLS 链路恢复并推送 |
 
 120 局模拟结果：664 个总轮次，平均 5.53 轮，所有动作均来自当前修订的合法动作集合，所有对局在有界步数内终止。本次固定策略样本全部飞升，不应将该比率解释为平衡性或真人胜率结论。
 

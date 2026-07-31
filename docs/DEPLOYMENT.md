@@ -69,6 +69,8 @@ npm run test:e2e
 
 `smoke:production` starts the built Node server on an isolated local port and checks `/api/health`, the production React shell, redacted provider metadata, and a vendored upstream card asset. It also injects sentinel secrets and fails if any sentinel appears in a public response.
 
+The GitHub Actions release gate additionally builds the real Docker image, starts it as a container, waits for the image `HEALTHCHECK`, probes the homepage and an upstream card asset, prints logs, and removes the smoke container. This keeps image boot verification independent of any one developer machine's Docker registry or proxy configuration.
+
 Current verification evidence is listed in [TEST_REPORT.md](TEST_REPORT.md).
 
 ## Data And Secrets

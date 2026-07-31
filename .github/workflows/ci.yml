@@ -17,3 +17,46 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run verify
+
+  docker-release-smoke:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --tag "dengxian-web:${{ github.sha }}" .
+      - name: Start production container
+        run: >-
+          docker run --detach
+          --name dengxian-web-smoke
+          --publish 8787:8787
+          --env PORT=8787
+          --env DATABASE_PATH=/app/data/ci.sqlite
+          "dengxian-web:${{ github.sha }}"
+      - name: Wait for image health check
+        run: |
+          for attempt in $(seq 1 40); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' dengxian-web-smoke)
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              docker logs dengxian-web-smoke
+              exit 1
+            fi
+            sleep 1
+          done
+          docker logs dengxian-web-smoke
+          exit 1
+      - name: Probe production routes
+        run: |
+          curl --fail --show-error --silent http://127.0.0.1:8787/api/health
+          curl --fail --show-error --silent --output /dev/null http://127.0.0.1:8787/
+          curl --fail --show-error --silent --output /dev/null http://127.0.0.1:8787/assets/upstream/cards/T01.webp
+      - name: Show container logs
+        if: always()
+        run: docker logs dengxian-web-smoke
+      - name: Remove smoke container
+        if: always()
+        run: docker rm --force dengxian-web-smoke
