@@ -57,6 +57,7 @@ export interface SeatAuth {
 interface RoomServiceOptions {
   now?: () => number;
   actionTimeoutMs?: number;
+  disconnectGraceMs?: number;
   sessionTokenTtlDays?: number;
   log?: (event: Record<string, unknown>) => void;
 }
@@ -179,6 +180,7 @@ export class RoomService {
   private readonly botQueues = new Map<string, Promise<RoomPayload>>();
   private readonly now: () => number;
   private readonly actionTimeoutMs: number;
+  private readonly disconnectGraceMs: number;
   private readonly sessionTokenTtlMs: number;
   private readonly log: (event: Record<string, unknown>) => void;
   private readonly bots: BotService;
@@ -194,6 +196,10 @@ export class RoomService {
     this.actionTimeoutMs = Math.max(
       1,
       options.actionTimeoutMs ?? Number(process.env.ACTION_TIMEOUT_MS ?? 90_000),
+    );
+    this.disconnectGraceMs = Math.max(
+      0,
+      options.disconnectGraceMs ?? Number(process.env.DISCONNECT_GRACE_MS ?? 120_000),
     );
     this.sessionTokenTtlMs = Math.max(
       1,
@@ -315,7 +321,7 @@ export class RoomService {
     const seat = room.seats.find((candidate) => candidate.id === seatId);
     if (!seat) return;
     seat.connected = false;
-    seat.disconnectedAt = new Date().toISOString();
+    seat.disconnectedAt = new Date(this.now()).toISOString();
     const player = room.gameState?.players.find((candidate) => candidate.id === seatId);
     if (player) player.disconnected = true;
     this.save(room, 'seat_disconnected', { seatId });
@@ -418,8 +424,7 @@ export class RoomService {
     if (!target || target.kind !== 'human' || target.connected || !target.disconnectedAt) {
       throw new Error('Target seat is not an eligible disconnected human');
     }
-    const graceMs = Math.max(0, Number(process.env.DISCONNECT_GRACE_MS ?? 120_000));
-    if (Date.now() - Date.parse(target.disconnectedAt) < graceMs) {
+    if (this.now() - Date.parse(target.disconnectedAt) < this.disconnectGraceMs) {
       throw new Error('Disconnect grace period is still active');
     }
     target.kind = 'bot';
@@ -512,8 +517,12 @@ export class RoomService {
 
   async expireTimedOutRooms(): Promise<string[]> {
     const changedRoomIds: string[] = [];
+    const markChanged = (roomId: string): void => {
+      if (!changedRoomIds.includes(roomId)) changedRoomIds.push(roomId);
+    };
     for (const stored of this.storage.listRooms()) {
       let room = stored.payload as RoomPayload;
+      if (this.reassignDisconnectedHost(room)) markChanged(room.id);
       const state = room.gameState;
       if (
         room.status !== 'active' ||
@@ -527,7 +536,7 @@ export class RoomService {
       if (room.actionDeadlineRevision !== state.revision) {
         if (this.syncActionDeadline(room)) {
           this.save(room, 'action_deadline_refreshed', { revision: state.revision });
-          changedRoomIds.push(room.id);
+          markChanged(room.id);
         }
         continue;
       }
@@ -565,13 +574,13 @@ export class RoomService {
           actions: applied,
         });
         room = await this.advanceBots(room.id);
-        changedRoomIds.push(room.id);
+        markChanged(room.id);
       } else if (this.syncActionDeadline(room)) {
         this.save(room, 'action_deadline_refreshed', {
           revision: room.gameState?.revision,
           reason: 'no_eligible_human_action',
         });
-        changedRoomIds.push(room.id);
+        markChanged(room.id);
       }
     }
     return changedRoomIds;
@@ -817,6 +826,39 @@ export class RoomService {
       payload: room,
     });
     this.storage.appendEvent(room.id, eventType, eventPayload);
+  }
+
+  private reassignDisconnectedHost(room: RoomPayload): boolean {
+    const host = room.seats.find((seat) => seat.id === room.hostSeatId);
+    if (
+      !host ||
+      host.kind !== 'human' ||
+      host.connected ||
+      !host.disconnectedAt ||
+      this.now() - Date.parse(host.disconnectedAt) < this.disconnectGraceMs
+    ) {
+      return false;
+    }
+    const successor = room.seats.find(
+      (seat) => seat.id !== host.id && seat.kind === 'human' && seat.connected,
+    );
+    if (!successor) return false;
+    room.hostSeatId = successor.id;
+    room.chat.push({
+      id: newId('chat'),
+      seatId: 'system',
+      name: '系统',
+      message: `${host.name} 断线超过宽限时间，房主已自动移交给 ${successor.name}。`,
+      createdAt: new Date(this.now()).toISOString(),
+      round: room.gameState?.round ?? 0,
+    });
+    room.chat = room.chat.slice(-100);
+    this.save(room, 'host_reassigned_after_disconnect', {
+      from: host.id,
+      to: successor.id,
+      disconnectedAt: host.disconnectedAt,
+    });
+    return true;
   }
 
   private newTokenExpiry(): string {

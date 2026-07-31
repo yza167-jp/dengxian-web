@@ -9,13 +9,13 @@
 | `npm audit` | Pass | 0 vulnerabilities |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 6 files，76 tests |
+| `npm test` | Pass | 6 files，77 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
 | Fresh clone smoke | Pass | 从远端 `c81f26a` 浅克隆后执行 `npm ci`、复制 `.env.example`、构建并启动；health、首页、天劫卡资源均为 200 |
 | `npm run test:e2e` | Historical pass | Chromium 16/16；本轮按用户指定只做 Safari 视觉验收，未重跑 Playwright |
-| `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过 typecheck、lint、Vitest、模拟与构建；未重跑 `npm audit` / Playwright |
+| `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过 npm audit、typecheck、lint、Vitest、模拟与构建；按用户指定使用 Safari，未重跑 Playwright |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
 | `docker build` | Not run | Docker CLI 可用但本机 daemon 未启动 |
 
@@ -39,7 +39,7 @@ Playwright 覆盖：
 12. 教程与未结局状态下的结局路由。
 13. 1024×768、1280×720、1440×900、1920×1080 四档截图。
 
-截图位于 `docs/screenshots/`。常规 release 截图为 `menu-1024x768.png`、`tutorial-1280x720.png`、`table-1440x900.png`、`saves-1920x1080.png`；本轮额外保留 `safari-*.jpg` 作为 Safari 实机证据。视觉复核确认页面非空、正文可读、主导航与核心动作可见，且人物头像、天劫牌、行动卡、探索机缘牌和中央仙台背景均已加载。
+截图位于 `docs/screenshots/`。常规 release 截图为 `menu-1024x768.png`、`tutorial-1280x720.png`、`table-1440x900.png`、`saves-1920x1080.png`；本轮额外保留 `safari-*.jpg` / `safari-*.png` 作为 Safari 实机证据。视觉复核确认页面非空、正文可读、主导航与核心动作可见，且人物头像、天劫牌、行动卡、探索机缘牌和中央仙台背景均已加载。
 
 本轮 Safari 连续试玩四轮，覆盖：
 
@@ -51,6 +51,7 @@ Playwright 覆盖：
 6. 返回 Bot 面板后确认 DeepSeek Bot 的决策、发言、经验、缓存命中、token、预估金额和四条公开记忆均已更新。
 7. 后续在 Safari 响应式设计模式复核 1024×768 与 1280×720：秘密行动图完整显示、不裁切卡名；单张机缘/法宝响应不再撑满大底板，三张探索牌保持居中的定宽卡牌画廊。退出响应式模式后又从新局第一轮重新走到探索，并刷新 `safari-opportunity-gallery.jpg` 作为正常 Safari 窗口证据。
 8. 在设置页输入仅本次请求使用的管理员诊断令牌，真实调用固定 DeepSeek 探针并显示 `deepseek-v4-flash`、1410ms、JSON 模式；请求完成后令牌字段立即清空，截图保存为 `safari-provider-probe.jpg`。
+9. 使用 `localhost` 与 `127.0.0.1` 两个独立 Safari 会话创建和加入同一房间，关闭房主私密窗口后确认客方在宽限期结束时自动成为房主、旧房主保留离线座位，且客方立即获得 AI 席位配置与开局权限；截图保存为 `safari-host-takeover.png`。
 
 ## 隐私与服务端权威
 
@@ -66,6 +67,7 @@ Playwright 覆盖：
 - 在线存档只允许房主按本房间列出、创建、覆盖和删除，API 只返回元数据；权威房间快照不会作为下载内容公开。
 - SQLite 文件关闭并重新打开后，进行中的房间、修订号和原座位令牌可恢复；服务重启先把真人标记离线，凭 token 重连后才恢复在线。旧状态缺少新增的雷击响应/有效贡献字段时会补入安全默认值，旧版本遗留的重复人物房间会确定性修复且同步房间与初始配置，而新建和导入仍严格拒绝重复人物。
 - 断线宽限后房主可让本地 Bot 临时接管；原会话令牌重连时恢复真人控制。
+- 房主断线超过同一宽限时间后，服务端会确定性地把房主权限移交给首位在线真人并广播；所有原座位令牌继续有效，原房主重连后不会抢回已经移交的权限。
 - 房主可在开局前交换自己与目标席位的顺序；双方身份令牌与房主权限保持绑定，不随视觉位置互换。
 - 座位令牌只存哈希并受 `SESSION_TOKEN_TTL_DAYS` 控制；过期令牌无法认证，过期时间不进入公开房间快照。
 - 在线动作截止时间与修订号一同持久化；超时会执行合法的安全默认动作、写入事件与动作账本，并为下一待决状态生成新截止时间。

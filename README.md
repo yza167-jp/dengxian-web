@@ -73,7 +73,7 @@ curl http://127.0.0.1:8787/api/health
 | `PUBLIC_ORIGIN` | 对外访问源 | `http://localhost:8787` |
 | `SESSION_TOKEN_TTL_DAYS` | 座位重连令牌的服务端有效期 | `30` |
 | `ACTION_TIMEOUT_MS` | 在线动作倒计时；超时后服务端执行安全默认动作 | `90000` |
-| `DISCONNECT_GRACE_MS` | 断线后允许房主启用临时 Bot 的宽限期 | `120000` |
+| `DISCONNECT_GRACE_MS` | 断线后允许临时 Bot 接管、房主自动移交的宽限期 | `120000` |
 | `DEEPSEEK_API_KEY` | DeepSeek 服务端密钥 | 空 |
 | `DEEPSEEK_BASE_URL` | DeepSeek OpenAI-compatible 地址 | `https://api.deepseek.com` |
 | `DEEPSEEK_BETA_BASE_URL` | 严格工具调用 beta 地址 | `https://api.deepseek.com/beta` |
@@ -124,6 +124,7 @@ npm run test:e2e
 - [Safari：独立机缘卡牌选择](docs/screenshots/safari-opportunity-gallery.jpg)
 - [Safari：DeepSeek Bot 成长与消费](docs/screenshots/safari-deepseek-bot-dashboard.jpg)
 - [Safari：DeepSeek 最小连通性探针](docs/screenshots/safari-provider-probe.jpg)
+- [Safari：房主断线后自动接管](docs/screenshots/safari-host-takeover.png)
 
 ## 上游与许可
 

@@ -656,13 +656,32 @@ describe('server http contracts', () => {
   });
 
   it('lets the host assign a temporary bot after grace and restores the human on reconnect', async () => {
-    const previousGrace = process.env.DISCONNECT_GRACE_MS;
-    process.env.DISCONNECT_GRACE_MS = '0';
+    const storage = new ServerStorage(':memory:');
+    const rooms = new RoomService(storage, { disconnectGraceMs: 0 });
     try {
-      const { host, seats } = await createStartedRoom();
+      const host = rooms.createRoom({ hostName: '甲', maxSeats: 4, seed: 913 });
+      const seats = [
+        host,
+        rooms.join({ roomId: host.room.id, name: '乙' }),
+        rooms.join({ roomId: host.room.id, name: '丙' }),
+        rooms.join({ roomId: host.room.id, name: '丁' }),
+      ];
+      for (const seat of seats) {
+        rooms.ready({
+          roomId: host.room.id,
+          seatId: seat.seatId,
+          seatToken: seat.seatToken,
+          ready: true,
+        });
+      }
+      await rooms.start({
+        roomId: host.room.id,
+        seatId: host.seatId,
+        seatToken: host.seatToken,
+      });
       const guest = seats[1]!;
-      app.services.rooms.disconnect(host.room.id, guest.seatId);
-      const takenOver = await app.services.rooms.takeOverDisconnected({
+      rooms.disconnect(host.room.id, guest.seatId);
+      const takenOver = await rooms.takeOverDisconnected({
         roomId: host.room.id,
         seatId: host.seatId,
         seatToken: host.seatToken,
@@ -673,7 +692,7 @@ describe('server http contracts', () => {
         kind: 'bot',
         temporaryBot: true,
       });
-      const restored = app.services.rooms.reconnect({
+      const restored = rooms.reconnect({
         roomId: host.room.id,
         seatId: guest.seatId,
         seatToken: guest.seatToken,
@@ -684,8 +703,45 @@ describe('server http contracts', () => {
         temporaryBot: false,
       });
     } finally {
-      if (previousGrace === undefined) delete process.env.DISCONNECT_GRACE_MS;
-      else process.env.DISCONNECT_GRACE_MS = previousGrace;
+      storage.close();
+    }
+  });
+
+  it('reassigns a disconnected host after grace while preserving every seat token', async () => {
+    const storage = new ServerStorage(':memory:');
+    let now = Date.parse('2026-07-31T03:00:00.000Z');
+    const rooms = new RoomService(storage, {
+      now: () => now,
+      disconnectGraceMs: 1_000,
+    });
+    try {
+      const host = rooms.createRoom({ hostName: '原房主', maxSeats: 4, seed: 912 });
+      const successor = rooms.join({ roomId: host.room.id, name: '继任修士' });
+      const observer = rooms.join({ roomId: host.room.id, name: '旁观修士' });
+
+      rooms.disconnect(host.room.id, host.seatId);
+      await expect(rooms.expireTimedOutRooms()).resolves.toEqual([]);
+      expect(rooms.getRoom(host.room.id).hostSeatId).toBe(host.seatId);
+
+      now += 1_001;
+      await expect(rooms.expireTimedOutRooms()).resolves.toEqual([host.room.id]);
+      const reassigned = rooms.getRoom(host.room.id);
+      expect(reassigned.hostSeatId).toBe(successor.seatId);
+      expect(reassigned.chat.at(-1)?.message).toContain('房主已自动移交');
+
+      expect(() => rooms.authenticate(host.room.id, host.seatId, host.seatToken)).not.toThrow();
+      expect(() => rooms.authenticate(host.room.id, successor.seatId, successor.seatToken)).not.toThrow();
+      expect(() => rooms.authenticate(host.room.id, observer.seatId, observer.seatToken)).not.toThrow();
+
+      const reconnected = rooms.reconnect({
+        roomId: host.room.id,
+        seatId: host.seatId,
+        seatToken: host.seatToken,
+      });
+      expect(reconnected.room.hostSeatId).toBe(successor.seatId);
+      expect(reconnected.room.seats.find((seat) => seat.id === host.seatId)?.connected).toBe(true);
+    } finally {
+      storage.close();
     }
   });
 });

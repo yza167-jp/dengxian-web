@@ -94,6 +94,7 @@ The client currently expects:
 - Browser clients must never receive API keys, provider base URLs supplied by other clients, other players' private cards, fates, unrevealed plans, or unrevealed votes.
 - Commands must be idempotent by `commandId`; the accepted room transition and pending command record commit in one SQLite transaction, and retries finish any interrupted post-action Bot advancement without applying the human action twice.
 - Seat tokens are stored only as hashes, carry a server-side expiry, and remain bound to identity across lobby reordering.
+- A host who stays disconnected past `DISCONNECT_GRACE_MS` is deterministically replaced by the first connected human seat; the transfer is persisted and broadcast without rotating or rebinding any seat token.
 - A persisted action deadline is revision-bound; chat, reconnect, and snapshot reads must not reset it.
 - Persisted state must record schema version and upstream commit.
 
