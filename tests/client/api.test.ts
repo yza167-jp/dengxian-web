@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { clientApi } from '../../src/client/api/clientApi';
+import { clientApi, type RoomSnapshot } from '../../src/client/api/clientApi';
 
 const room = {
   schemaVersion: 1,
@@ -52,6 +52,29 @@ describe('client api payload mapping', () => {
     }));
     expect(session.seatId).toBe('seat-2');
     expect(providers).toEqual([{ id: 'local-bot', label: '本地', status: 'available' }]);
+  });
+
+  it('fetches a fresh seat-scoped room snapshot for stale action recovery', async () => {
+    const snapshot: RoomSnapshot = {
+      room: { ...room, seats: [], chat: [] },
+      view: null,
+      stateHash: 'fresh-hash',
+    };
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(snapshot)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await clientApi.snapshot({
+      roomId: room.id,
+      code: room.code,
+      seatId: 'seat-1',
+      seatToken: 'token-1234567890123456',
+      snapshot,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/rooms/room_123456?seatId=seat-1&seatToken=token-1234567890123456');
+    expect(init.headers).toEqual({ 'content-type': 'application/json' });
   });
 
   it('preserves JSON content type when authenticated Bot requests add custom headers', async () => {

@@ -59,6 +59,7 @@ interface GameStore {
   botDashboard: BotDashboard | null;
   chat: ServerChatMessage[];
   selectedCardId: string | null;
+  actionPending: boolean;
   activePanel: 'log' | 'chat';
   status: string;
   error: string | null;
@@ -385,6 +386,10 @@ function errorMessage(error: unknown, fallback: string): string {
   }
 }
 
+function isStaleRevisionError(error: unknown): boolean {
+  return errorMessage(error, '').includes('Stale baseRevision');
+}
+
 function localConversationReplies(
   state: GameState,
   message: string,
@@ -444,6 +449,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   botDashboard: null,
   chat: [],
   selectedCardId: null,
+  actionPending: false,
   activePanel: 'log',
   status: RULES_DIGEST,
   error: null,
@@ -665,7 +671,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   submitAction: async (actionId) => {
-    const { localState, view, session, humanSeatId } = get();
+    const { localState, view, session, humanSeatId, actionPending } = get();
+    if (actionPending) return;
     const action = view?.legalActions.find((candidate) => candidate.id === actionId);
     if (!action) {
       set({ error: '这个动作已经过期或当前不可执行。' });
@@ -673,9 +680,34 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     if (session) {
       if (!view) return;
-      const result = await attempt(set, '动作提交失败，请重试。', () =>
-        clientApi.submitAction(session, action.id, view.revision));
-      if (result) applySnapshot(result, set);
+      set({ actionPending: true, error: null, status: `正在提交“${action.label}”…` });
+      try {
+        const result = await clientApi.submitAction(session, action.id, view.revision);
+        applySnapshot(result, set);
+      } catch (error) {
+        if (isStaleRevisionError(error)) {
+          try {
+            const latest = await clientApi.snapshot(session);
+            applySnapshot(latest, set);
+            set({
+              selectedCardId: null,
+              status: latest.view
+                ? `对局已自动同步到修订 ${latest.view.revision}，请按最新局面重新选择行动。`
+                : '房间已自动同步，请按最新状态继续。',
+              error: null,
+            });
+          } catch (refreshError) {
+            set({
+              error: `对局状态已更新，但自动同步失败：${errorMessage(refreshError, '请刷新页面后重试。')}`,
+              status: '自动同步失败，请刷新页面。',
+            });
+          }
+        } else {
+          set({ error: errorMessage(error, '动作提交失败，请重试。'), status: '动作提交失败，请重试。' });
+        }
+      } finally {
+        set({ actionPending: false });
+      }
       return;
     }
     if (!localState) {

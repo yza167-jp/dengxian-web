@@ -1275,6 +1275,7 @@ function PlayerHand({ view }: { view: GameView }) {
 
 function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel: string }) {
   const submitAction = useGameStore((state) => state.submitAction);
+  const actionPending = useGameStore((state) => state.actionPending);
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
   const grouped = useMemo(() => actions.reduce<Record<string, GameAction[]>>((acc, action) => {
     (acc[action.type] ??= []).push(action);
@@ -1295,6 +1296,7 @@ function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel
   }, [actions, selectedActionId]);
   const selectedAction = actions.find((action) => action.id === selectedActionId) ?? null;
   const performAction = (action: GameAction) => {
+    if (actionPending) return;
     ritualAudio.pulse(action.type.includes('VOTE') || action.type.includes('PLAN') ? 'reveal' : 'action');
     void submitAction(action.id);
     setSelectedActionId(null);
@@ -1303,6 +1305,7 @@ function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel
     <section
       className={`action-dock mofa-action-dock${isSecretPlan ? ' is-secret-plan' : ''}`}
       aria-label="合法动作"
+      aria-busy={actionPending}
       style={artVariable('--action-dock-art', '/assets/upstream/web/04-每轮秘密四选一-720.webp')}
     >
       <header className="decision-heading">
@@ -1331,6 +1334,7 @@ function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel
                         key={action.id}
                         className={`plan-action-option${selected ? ' selected' : ''}`}
                         type="button"
+                        disabled={actionPending}
                         onClick={() => {
                           setSelectedActionId(action.id);
                           ritualAudio.pulse('reveal');
@@ -1357,6 +1361,7 @@ function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel
                         className="mofa-card-action"
                         data-card-id={cardId}
                         type="button"
+                        disabled={actionPending}
                         onClick={() => performAction(action)}
                         aria-label={`${action.label}：${action.description}`}
                       >
@@ -1374,6 +1379,7 @@ function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel
                       className={choice ? 'mofa-action-button has-action-art' : 'mofa-action-button'}
                       data-action-choice={choice ?? undefined}
                       type="button"
+                      disabled={actionPending}
                       onClick={() => performAction(action)}
                       aria-label={`${action.label}：${action.description}`}
                       style={choice ? artVariable('--action-art', actionArtPath(choice)) : undefined}
@@ -1400,13 +1406,13 @@ function ActionDock({ actions, phaseLabel }: { actions: GameAction[]; phaseLabel
         <button
           className="decision-confirm"
           type="button"
-          disabled={!selectedAction}
+          disabled={!selectedAction || actionPending}
           onClick={() => {
             if (selectedAction) performAction(selectedAction);
           }}
         >
-          <strong>确认行动</strong>
-          <small>{selectedAction?.label ?? '先选择一项计划'}</small>
+          <strong>{actionPending ? '提交中…' : '确认行动'}</strong>
+          <small>{actionPending ? '正在与仙台同步' : selectedAction?.label ?? '先选择一项计划'}</small>
         </button>
       ) : null}
     </section>

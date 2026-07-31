@@ -247,6 +247,14 @@ export const clientApi = {
     return sessionFromRoomAuth(response);
   },
 
+  snapshot(session: ClientSession): Promise<RoomSnapshot> {
+    const query = new URLSearchParams({
+      seatId: session.seatId,
+      seatToken: session.seatToken,
+    });
+    return requestJson(`/api/rooms/${encodeURIComponent(session.roomId)}?${query.toString()}`);
+  },
+
   ready(session: ClientSession, ready: boolean): Promise<RoomSnapshot> {
     return authedPost('/api/rooms/ready', session, { ready });
   },

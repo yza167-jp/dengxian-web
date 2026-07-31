@@ -180,6 +180,104 @@ describe('client game store', () => {
     expect(ready).not.toHaveBeenCalled();
     vi.restoreAllMocks();
   });
+
+  it('automatically resyncs an online room after a stale revision rejection', async () => {
+    const session = providerSession();
+    const state = createGame({
+      mode: 'online',
+      seed: 6262,
+      seats: [
+        { id: 'seat-1', name: '同步测试', kind: 'human', characterId: 'R07' },
+        ...Array.from({ length: 3 }, (_, index) => ({
+          id: `seat-${index + 2}`,
+          name: `Bot ${index + 1}`,
+          kind: 'bot' as const,
+          ai: { provider: 'local-bot' as const, difficulty: 'normal' as const, persona: 'steady' as const },
+        })),
+      ],
+    });
+    const staleView = getViewForSeat(state, 'seat-1');
+    const latest: RoomSnapshot = {
+      room: { ...session.snapshot.room, status: 'active' },
+      view: { ...staleView, revision: staleView.revision + 3 },
+      stateHash: 'latest-hash',
+    };
+    const submit = vi.spyOn(clientApi, 'submitAction').mockRejectedValue(
+      new Error(JSON.stringify({ error: 'Stale baseRevision' })),
+    );
+    const refresh = vi.spyOn(clientApi, 'snapshot').mockResolvedValue(latest);
+    useGameStore.setState({
+      localState: null,
+      view: staleView,
+      room: latest.room,
+      session,
+      socket: fakeSocket(),
+      humanSeatId: 'seat-1',
+      actionPending: false,
+      error: null,
+      mode: 'table',
+    });
+    expect(staleView.legalActions[0]).toBeDefined();
+
+    await useGameStore.getState().submitAction(staleView.legalActions[0]!.id);
+
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledWith(session);
+    expect(useGameStore.getState().view?.revision).toBe(latest.view!.revision);
+    expect(useGameStore.getState().status).toMatch(/自动同步到修订.*重新选择行动/);
+    expect(useGameStore.getState().error).toBeNull();
+    expect(useGameStore.getState().actionPending).toBe(false);
+    vi.restoreAllMocks();
+  });
+
+  it('locks duplicate online action submissions until the first request settles', async () => {
+    const session = providerSession();
+    const state = createGame({
+      mode: 'online',
+      seed: 6262,
+      seats: [
+        { id: 'seat-1', name: '防重测试', kind: 'human', characterId: 'R07' },
+        ...Array.from({ length: 3 }, (_, index) => ({
+          id: `seat-${index + 2}`,
+          name: `Bot ${index + 1}`,
+          kind: 'bot' as const,
+          ai: { provider: 'local-bot' as const, difficulty: 'normal' as const, persona: 'steady' as const },
+        })),
+      ],
+    });
+    const view = getViewForSeat(state, 'seat-1');
+    const snapshot: RoomSnapshot = {
+      room: { ...session.snapshot.room, status: 'active' },
+      view,
+      stateHash: 'settled-hash',
+    };
+    let resolveSubmit!: (value: RoomSnapshot) => void;
+    const pending = new Promise<RoomSnapshot>((resolve) => {
+      resolveSubmit = resolve;
+    });
+    const submit = vi.spyOn(clientApi, 'submitAction').mockReturnValue(pending);
+    useGameStore.setState({
+      localState: null,
+      view,
+      room: snapshot.room,
+      session,
+      socket: fakeSocket(),
+      humanSeatId: 'seat-1',
+      actionPending: false,
+      error: null,
+      mode: 'table',
+    });
+
+    const first = useGameStore.getState().submitAction(view.legalActions[0]!.id);
+    const second = useGameStore.getState().submitAction(view.legalActions[0]!.id);
+
+    expect(useGameStore.getState().actionPending).toBe(true);
+    expect(submit).toHaveBeenCalledTimes(1);
+    resolveSubmit(snapshot);
+    await Promise.all([first, second]);
+    expect(useGameStore.getState().actionPending).toBe(false);
+    vi.restoreAllMocks();
+  });
 });
 
 function providerSession(): ClientSession {
