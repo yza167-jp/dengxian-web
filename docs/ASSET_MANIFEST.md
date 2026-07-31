@@ -4,6 +4,8 @@ Upstream source: `XLT-6/mofa-dengxiantai@b7d214903fb10c7de20f399c3c5a7bf27d63cd0
 
 License: upstream MIT license in `vendor/mofa-dengxiantai/LICENSE`. Upstream README states showcase images are AI-assisted prototype visuals for current game display and testing.
 
+Automated integrity gate: `npm run verify:assets` compares the complete vendored web tree against the 7 characters, 48 opportunities, 18 calamities, 12 fates, and presentation assets declared by this release. It rejects missing or unexpected files, invalid PNG/WebP signatures, undersized placeholders, an upstream SHA mismatch, or an asset category omitted from this manifest.
+
 ## Vendored Raw Images
 
 | Path | Size | Dimensions | Purpose |

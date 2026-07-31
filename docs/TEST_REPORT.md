@@ -9,6 +9,7 @@
 | `npm audit` | Pass; later retry network-blocked | 最近一次成功的在线检查为 0 vulnerabilities；锁文件未变化，随后重试因 npm registry TLS 建连中断而无法取得新结果 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
+| `npm run verify:assets` | Pass | 110/110 个上游图片资产存在且通过 PNG/WebP 签名、最小体积、固定 SHA、内容 ID 与清单覆盖校验 |
 | `npm test` | Pass | 7 files，83 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |

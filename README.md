@@ -104,6 +104,7 @@ npm run verify
 ```bash
 npm run typecheck
 npm run lint
+npm run verify:assets
 npm test
 npm run sim
 npm run build
