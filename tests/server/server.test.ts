@@ -317,6 +317,45 @@ describe('server http contracts', () => {
     expect(started.view?.players.find((player) => player.id === host.seatId)?.characterId).toBe('R07');
   });
 
+  it('starts a six-seat online room with two humans and four bots', async () => {
+    const rooms = app.services.rooms;
+    const host = rooms.createRoom({ hostName: '甲', maxSeats: 6, seed: 79 });
+    const guest = rooms.join({ roomId: host.room.id, name: '乙' });
+    for (let index = 0; index < 4; index += 1) {
+      rooms.addBot({
+        roomId: host.room.id,
+        seatId: host.seatId,
+        seatToken: host.seatToken,
+        name: `Bot ${index + 1}`,
+        ai: { provider: 'local-bot', difficulty: 'normal', persona: 'steady' },
+      });
+    }
+    for (const human of [host, guest]) {
+      rooms.ready({
+        roomId: host.room.id,
+        seatId: human.seatId,
+        seatToken: human.seatToken,
+        ready: true,
+      });
+    }
+
+    const started = await rooms.start({
+      roomId: host.room.id,
+      seatId: host.seatId,
+      seatToken: host.seatToken,
+    });
+    expect(started.room.seats).toHaveLength(6);
+    expect(started.view?.players).toHaveLength(6);
+    expect(new Set(started.view?.players.map((player) => player.characterId)).size).toBe(6);
+
+    const guestSnapshot = await request(app.app)
+      .get(`/api/rooms/${host.room.id}`)
+      .query({ seatId: guest.seatId, seatToken: guest.seatToken })
+      .expect(200);
+    expect(guestSnapshot.body.view.seatId).toBe(guest.seatId);
+    expect(guestSnapshot.body.view.players).toHaveLength(6);
+  });
+
   it('lets the host swap lobby order without invalidating either seat token', () => {
     const host = app.services.rooms.createRoom({ hostName: '甲', maxSeats: 4, seed: 78 });
     const guest = app.services.rooms.join({ roomId: host.room.id, name: '乙' });

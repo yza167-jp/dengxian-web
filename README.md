@@ -125,6 +125,7 @@ npm run test:e2e
 - [Safari：DeepSeek Bot 成长与消费](docs/screenshots/safari-deepseek-bot-dashboard.jpg)
 - [Safari：DeepSeek 最小连通性探针](docs/screenshots/safari-provider-probe.jpg)
 - [Safari：房主断线后自动接管](docs/screenshots/safari-host-takeover.png)
+- [Safari：两名真人与四名 Bot 的六席在线局](docs/screenshots/safari-six-seat-online.png)
 
 ## 上游与许可
 

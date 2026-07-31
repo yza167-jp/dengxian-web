@@ -9,7 +9,7 @@
 | `npm audit` | Pass | 0 vulnerabilities |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 6 files，77 tests |
+| `npm test` | Pass | 6 files，78 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
@@ -41,7 +41,7 @@ Playwright 覆盖：
 
 截图位于 `docs/screenshots/`。常规 release 截图为 `menu-1024x768.png`、`tutorial-1280x720.png`、`table-1440x900.png`、`saves-1920x1080.png`；本轮额外保留 `safari-*.jpg` / `safari-*.png` 作为 Safari 实机证据。视觉复核确认页面非空、正文可读、主导航与核心动作可见，且人物头像、天劫牌、行动卡、探索机缘牌和中央仙台背景均已加载。
 
-本轮 Safari 连续试玩四轮，覆盖：
+本轮 Safari 连续试玩四轮，并补做联机恢复与六席混合局，覆盖：
 
 1. 从 16 套预设创建三位长期 Bot，并把其中一位切换到 DeepSeek。
 2. 将三位长期 Bot 逐席加入服务端权威单人局。
@@ -52,6 +52,7 @@ Playwright 覆盖：
 7. 后续在 Safari 响应式设计模式复核 1024×768 与 1280×720：秘密行动图完整显示、不裁切卡名；单张机缘/法宝响应不再撑满大底板，三张探索牌保持居中的定宽卡牌画廊。退出响应式模式后又从新局第一轮重新走到探索，并刷新 `safari-opportunity-gallery.jpg` 作为正常 Safari 窗口证据。
 8. 在设置页输入仅本次请求使用的管理员诊断令牌，真实调用固定 DeepSeek 探针并显示 `deepseek-v4-flash`、1410ms、JSON 模式；请求完成后令牌字段立即清空，截图保存为 `safari-provider-probe.jpg`。
 9. 使用 `localhost` 与 `127.0.0.1` 两个独立 Safari 会话创建和加入同一房间，关闭房主私密窗口后确认客方在宽限期结束时自动成为房主、旧房主保留离线座位，且客方立即获得 AI 席位配置与开局权限；截图保存为 `safari-host-takeover.png`。
+10. 新建六席在线房间，以两个独立 Safari 私密会话加入两名真人、补入四名本地 Bot、双方准备并成功开局；环坛同时显示六个唯一人物席位，天劫卡和两枚不小于 44px 的响应按钮完整可见，截图保存为 `safari-six-seat-online.png`。
 
 ## 隐私与服务端权威
 
@@ -68,6 +69,7 @@ Playwright 覆盖：
 - SQLite 文件关闭并重新打开后，进行中的房间、修订号和原座位令牌可恢复；服务重启先把真人标记离线，凭 token 重连后才恢复在线。旧状态缺少新增的雷击响应/有效贡献字段时会补入安全默认值，旧版本遗留的重复人物房间会确定性修复且同步房间与初始配置，而新建和导入仍严格拒绝重复人物。
 - 断线宽限后房主可让本地 Bot 临时接管；原会话令牌重连时恢复真人控制。
 - 房主断线超过同一宽限时间后，服务端会确定性地把房主权限移交给首位在线真人并广播；所有原座位令牌继续有效，原房主重连后不会抢回已经移交的权限。
+- 六席在线房间可由两名真人与四名 Bot 组成；服务端为六席分配互不重复的人物，并向每名真人返回其座位绑定的脱敏视图。
 - 房主可在开局前交换自己与目标席位的顺序；双方身份令牌与房主权限保持绑定，不随视觉位置互换。
 - 座位令牌只存哈希并受 `SESSION_TOKEN_TTL_DAYS` 控制；过期令牌无法认证，过期时间不进入公开房间快照。
 - 在线动作截止时间与修订号一同持久化；超时会执行合法的安全默认动作、写入事件与动作账本，并为下一待决状态生成新截止时间。
