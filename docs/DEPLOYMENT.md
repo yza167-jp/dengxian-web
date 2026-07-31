@@ -34,6 +34,8 @@ docker compose up --build
 
 Create `.env` before Compose because `docker-compose.yml` deliberately uses `env_file: .env`. The same `npm run build` and `npm start` contract used by the verified local production smoke is used in the image.
 
+The runtime image drops root privileges before startup and exposes an image-level health check against `/api/health`. A named volume created from the image inherits write access for the bundled `node` user; operators mounting an existing host directory must grant that directory write access to the container user.
+
 ## LAN
 
 Use:

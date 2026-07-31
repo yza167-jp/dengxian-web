@@ -6,18 +6,18 @@
 
 | 检查 | 结果 | 证据 |
 |---|---|---|
-| `npm audit` | Pass | 0 vulnerabilities |
+| `npm audit` | Pass; later retry network-blocked | 最近一次成功的在线检查为 0 vulnerabilities；锁文件未变化，随后重试因 npm registry TLS 建连中断而无法取得新结果 |
 | `npm run typecheck` | Pass | TypeScript 无错误 |
 | `npm run lint` | Pass | ESLint 0 warnings / 0 errors |
-| `npm test` | Pass | 6 files，78 tests |
+| `npm test` | Pass | 7 files，81 tests |
 | `npm run sim` | Pass | 120/120 合法终局；4/5/6 人各 40 局 |
 | `npm run build` | Pass | Vite client + `dist/server/index.js` + replay verifier |
 | `npm start` smoke | Pass | `/api/health` 与生产首页均返回 200 |
 | Fresh clone smoke | Pass | 从远端 `8338b27` 浅克隆后执行 `npm ci`、构建并在无 `.env` 下启动；health、首页、天劫卡资源均为 200 |
 | `npm run test:e2e` | Historical pass | Chromium 16/16；本轮按用户指定只做 Safari 视觉验收，未重跑 Playwright |
-| `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过 npm audit、typecheck、lint、Vitest、模拟与构建；按用户指定使用 Safari，未重跑 Playwright |
+| `npm run verify` | Not rerun as a bundle | 本轮独立执行并通过最近一次可用的 npm audit、typecheck、lint、Vitest、模拟与构建；随后 audit 重试受 registry 网络阻塞；按用户指定使用 Safari，未重跑 Playwright |
 | `docker compose config --quiet` | Pass | `.env.example` 临时复制后配置可解析 |
-| `docker build` | Blocked externally | Docker Desktop daemon 已启动；构建到 `node:24-bookworm-slim` 元数据拉取时停滞，直接 `docker pull` 也卡在本机 Docker registry 凭据/代理链路，未把该外部失败声称为镜像通过 |
+| `docker build` | Blocked externally | Docker Desktop daemon 已启动；隔离 `DOCKER_CONFIG` 后，匿名 token 与公共 ECR 请求仍由 daemon 端返回 EOF，确认阻塞在本机 Docker registry/代理链路；未把该外部失败声称为镜像通过 |
 
 120 局模拟结果：664 个总轮次，平均 5.53 轮，所有动作均来自当前修订的合法动作集合，所有对局在有界步数内终止。本次固定策略样本全部飞升，不应将该比率解释为平衡性或真人胜率结论。
 
@@ -70,6 +70,7 @@ Playwright 覆盖：
 - 断线宽限后房主可让本地 Bot 临时接管；原会话令牌重连时恢复真人控制。
 - 房主断线超过同一宽限时间后，服务端会确定性地把房主权限移交给首位在线真人并广播；所有原座位令牌继续有效，原房主重连后不会抢回已经移交的权限。
 - 六席在线房间可由两名真人与四名 Bot 组成；服务端为六席分配互不重复的人物，并向每名真人返回其座位绑定的脱敏视图。
+- Docker 发布契约测试锁定非 root 运行时、`/api/health` 健康检查、8787 端口、持久卷、生产入口以及 `.env` / 依赖目录不进入构建上下文。
 - 房主可在开局前交换自己与目标席位的顺序；双方身份令牌与房主权限保持绑定，不随视觉位置互换。
 - 座位令牌只存哈希并受 `SESSION_TOKEN_TTL_DAYS` 控制；过期令牌无法认证，过期时间不进入公开房间快照。
 - 在线动作截止时间与修订号一同持久化；超时会执行合法的安全默认动作、写入事件与动作账本，并为下一待决状态生成新截止时间。
@@ -87,4 +88,4 @@ Playwright 覆盖：
 
 Node 24 当前会为 `node:sqlite` 打印 ExperimentalWarning；数据库 API 在本项目所需范围内通过单测、生产启动和 E2E。该提示不是测试失败，但升级 Node 时应重新运行迁移与恢复测试。
 
-本机 Docker Desktop daemon 已运行，`docker info` 与 Compose 配置均可用；但真实构建在拉取 `node:24-bookworm-slim` 元数据时持续停滞，直接拉取在中止时报告 credential helper 被打断。宿主机可直接访问 Docker registry，而 daemon 配置了本机代理，说明阻塞位于当前 Docker Desktop 的 registry 凭据/代理链路，不是项目 Dockerfile 的静态解析。未修改用户的网络或凭据设置，目标环境仍应执行一次 `docker compose up --build`。
+本机 Docker Desktop daemon 已运行，`docker info` 与 Compose 配置均可用；但真实构建在拉取 `node:24-bookworm-slim` 元数据时持续停滞。使用隔离的临时 `DOCKER_CONFIG` 绕开用户 credential helper 后，Docker Hub 匿名 token 请求与公共 ECR manifest 请求仍由 daemon 返回 EOF；宿主机 `curl` 可直接访问同一 registry，且 daemon 配置了本机代理，因此阻塞位于当前 Docker Desktop 的 registry/代理链路，不是项目 Dockerfile 的静态解析。未修改用户的网络或凭据设置，目标环境仍应执行一次 `docker compose up --build`。
